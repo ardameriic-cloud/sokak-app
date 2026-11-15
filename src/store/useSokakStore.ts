@@ -19,11 +19,11 @@ import {
   WatchTogetherState,
 } from '../types/sokak';
 
-const APP_CONFIG_VERSION = 'sokak-v1.3.0';
+const APP_CONFIG_VERSION = 'sokak-v1.4.0-cloud';
 const DEFAULT_SERVER_URL =
   ((import.meta as unknown as { env?: Record<string, string> }).env
     ?.VITE_SERVER_URL || ''
-  ).trim() || 'http://localhost:3001';
+  ).trim() || 'https://sokak-server.onrender.com';
 
 const STORAGE_KEYS = {
   CONFIG_VERSION: 'sokak_config_version',
