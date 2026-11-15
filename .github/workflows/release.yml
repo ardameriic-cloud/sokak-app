@@ -96,14 +96,15 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.0' }}
-          name: 'SOKAK v1.1.0 — Masaüstü Kurulum Paketleri (Windows .exe & macOS .dmg)'
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.1' }}
+          name: 'SOKAK v1.1.1 — Masaüstü Kurulum Paketleri (Windows .exe & macOS .dmg)'
           body: |
-            ## ⚡ SOKAK v1.1.0 — Masaüstü İndirme Paketleri
+            ## ⚡ SOKAK v1.1.1 — Masaüstü İndirme Paketleri
             - **Windows 10/11 (64-bit):** `SOKAK-Setup.exe`
             - **macOS (Apple Silicon):** `SOKAK.dmg`
-            - **Yenilikler:**
-              - 🎬 **Anlık 30 Sn Oyun Klip Sistemi (`F8` / `Ctrl+Shift+S`):** Sıfır FPS kaybıyla dairesel RAM tamponu, kamera deklanşör sesi ve `#klipler-ve-linkler` kanalında anında `.webm` video önizleme + **Bilgisayara İndir** özelliği.
+            - **Yenilikler (v1.1.1):**
+              - 🎙️ **Ekran Paylaşımı Sırasında Kesintisiz Mikrofon & Sistem Sesi Mikseri:** Ekran paylaşımı başlatıldığında veya kapatıldığında mikrofon ses göndericisi (`RTCRtpSender`) korunur; masaüstü/oyun sesi `Web Audio API (AudioContext)` üzerinden mikrofon sesiyle aynı anda `128kbps Stereo Opus` kanalında iletilir.
+              - 🎬 **Anlık 30 Sn Oyun Klip Sistemi (`F8` / `Ctrl+Shift+S`):** Sıfır FPS kaybıyla dairesel RAM tamponu ve `#klipler-ve-linkler` kanalında anında `.webm` video önizleme + **Bilgisayara İndir**.
               - 🔄 **Otomatik Güncelleyici (`electron-updater`):** GitHub Releases üzerinden arka planda otomatik güncelleme kontrolü ve tek tıkla kurulum.
           draft: false
           prerelease: false

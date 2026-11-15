@@ -74,6 +74,9 @@ class ReplayBufferEngine {
    */
   public detachFromScreenShareStream() {
     if (!this.ownsStandaloneStream) {
+      if (this.activeStream) {
+        this.activeStream.getTracks().forEach((t) => t.stop());
+      }
       this.stopBuffer();
     }
   }

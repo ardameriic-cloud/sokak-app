@@ -21,10 +21,15 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-interface PeerAudioPipeline {
+interface PeerAudioTrackEntry {
+  trackId: string;
   sourceNode: MediaStreamAudioSourceNode;
-  gainNode: GainNode;
   audioElement: HTMLAudioElement;
+}
+
+interface PeerAudioPipeline {
+  gainNode: GainNode;
+  tracks: Map<string, PeerAudioTrackEntry>;
 }
 
 class RealTimeEngine {
@@ -36,8 +41,12 @@ class RealTimeEngine {
   private audioContext: AudioContext | null = null;
   private rawMicStream: MediaStream | null = null;
   private processedMicStream: MediaStream | null = null;
+  private outboundDestination: MediaStreamAudioDestinationNode | null = null;
   private micGainGateNode: GainNode | null = null;
   private micAnalyserNode: AnalyserNode | null = null;
+  private screenRawStream: MediaStream | null = null;
+  private screenAudioSourceNode: MediaStreamAudioSourceNode | null = null;
+  private screenAudioGainNode: GainNode | null = null;
   private noiseGateIntervalId: number | null = null;
   private telemetryIntervalId: number | null = null;
   private lastBytesSent = 0;
@@ -608,6 +617,7 @@ class RealTimeEngine {
 
     this.micAnalyserNode = analyser;
     this.micGainGateNode = gateGain;
+    this.outboundDestination = destination;
     this.processedMicStream = destination.stream;
 
     this.startNoiseGateLoop();
@@ -773,8 +783,9 @@ class RealTimeEngine {
 
     const localScreen = useSokakStore.getState().localScreenStream;
     if (localScreen) {
-      localScreen.getTracks().forEach((track) => {
-        pc.addTrack(track, localScreen);
+      // Sadece ekran video izini ekle; mikrofon ses izi zaten yukarıda eklendi (üzerine yazma!)
+      localScreen.getVideoTracks().forEach((videoTrack) => {
+        pc.addTrack(videoTrack, localScreen);
       });
     }
 
@@ -788,11 +799,10 @@ class RealTimeEngine {
     };
 
     pc.ontrack = (event) => {
-      const stream = event.streams[0];
-      if (!stream) return;
+      const stream = event.streams[0] || new MediaStream([event.track]);
 
       if (event.track.kind === 'audio') {
-        this.attachPeerAudioGainPipeline(peerSocketId, stream);
+        this.attachPeerAudioGainPipeline(peerSocketId, stream, event.track);
       }
 
       if (event.track.kind === 'video') {
@@ -818,37 +828,68 @@ class RealTimeEngine {
 
   private attachPeerAudioGainPipeline(
     peerSocketId: string,
-    remoteStream: MediaStream
+    remoteStream: MediaStream,
+    audioTrack?: MediaStreamTrack
   ) {
     const ctx = this.ensureAudioContext();
+    const trackId =
+      audioTrack?.id || remoteStream.getAudioTracks()[0]?.id || 'default-audio';
 
-    const prev = this.peerAudioPipelines.get(peerSocketId);
-    if (prev) {
+    let pipeline = this.peerAudioPipelines.get(peerSocketId);
+    if (!pipeline) {
+      const gainNode = ctx.createGain();
+      gainNode.connect(ctx.destination);
+      pipeline = {
+        gainNode,
+        tracks: new Map<string, PeerAudioTrackEntry>(),
+      };
+      this.peerAudioPipelines.set(peerSocketId, pipeline);
+    }
+
+    const existingTrackEntry = pipeline.tracks.get(trackId);
+    if (existingTrackEntry) {
       try {
-        prev.sourceNode.disconnect();
-        prev.gainNode.disconnect();
-        prev.audioElement.pause();
+        existingTrackEntry.sourceNode.disconnect();
+        existingTrackEntry.audioElement.pause();
       } catch {
         // yoksay
       }
+      pipeline.tracks.delete(trackId);
     }
 
+    const trackOnlyStream = audioTrack
+      ? new MediaStream([audioTrack])
+      : remoteStream;
+
     const audioEl = new Audio();
-    audioEl.srcObject = remoteStream;
+    audioEl.srcObject = trackOnlyStream;
     audioEl.muted = true;
     audioEl.play().catch(() => {});
 
-    const sourceNode = ctx.createMediaStreamSource(remoteStream);
-    const gainNode = ctx.createGain();
+    const sourceNode = ctx.createMediaStreamSource(trackOnlyStream);
+    sourceNode.connect(pipeline.gainNode);
 
-    sourceNode.connect(gainNode);
-    gainNode.connect(ctx.destination);
-
-    this.peerAudioPipelines.set(peerSocketId, {
+    pipeline.tracks.set(trackId, {
+      trackId,
       sourceNode,
-      gainNode,
       audioElement: audioEl,
     });
+
+    if (audioTrack) {
+      audioTrack.addEventListener('ended', () => {
+        const currentPipeline = this.peerAudioPipelines.get(peerSocketId);
+        const entry = currentPipeline?.tracks.get(trackId);
+        if (entry) {
+          try {
+            entry.sourceNode.disconnect();
+            entry.audioElement.pause();
+          } catch {
+            // yoksay
+          }
+          currentPipeline?.tracks.delete(trackId);
+        }
+      });
+    }
 
     this.syncPeerVolume(peerSocketId);
   }
@@ -1001,29 +1042,93 @@ class RealTimeEngine {
       }
 
       const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
-        if ('contentHint' in videoTrack) {
-          videoTrack.contentHint = 'motion';
-        }
-        videoTrack.onended = () => {
-          this.stopScreenShare();
-        };
+      if (!videoTrack) {
+        throw new Error('Ekran video izi alınamadı.');
       }
 
-      store.setLocalScreenStream(stream);
+      // Önceki bir ekran paylaşımı açıksa sadece ekran izlerini temizle (mikrofona asla dokunma)
+      this.cleanupScreenCaptureOnly();
+
+      // Mikrofon hattının aktif olduğundan emin ol (yoksa başlat)
+      if (
+        !this.processedMicStream ||
+        this.processedMicStream.getAudioTracks().length === 0
+      ) {
+        await this.setupLocalMicPipeline();
+      }
+
+      if ('contentHint' in videoTrack) {
+        videoTrack.contentHint = 'motion';
+      }
+      videoTrack.onended = () => {
+        this.stopScreenShare();
+      };
+
+      this.screenRawStream = stream;
+
+      // Masaüstü/sistem sesi yakalandıysa Web Audio API (AudioContext) üzerinden mikrofon çıkışıyla birleştir
+      const desktopAudioTracks = stream.getAudioTracks();
+      if (desktopAudioTracks.length > 0 && this.outboundDestination) {
+        try {
+          const ctx = this.ensureAudioContext();
+          const desktopAudioStream = new MediaStream(desktopAudioTracks);
+          this.screenAudioSourceNode =
+            ctx.createMediaStreamSource(desktopAudioStream);
+          this.screenAudioGainNode = ctx.createGain();
+          this.screenAudioGainNode.gain.value = 0.75;
+          this.screenAudioSourceNode.connect(this.screenAudioGainNode);
+          this.screenAudioGainNode.connect(this.outboundDestination);
+        } catch (mixErr) {
+          console.warn('Masaüstü sesi Web Audio mikserine bağlanamadı:', mixErr);
+        }
+      }
+
+      // Sadece video izini taşıyan akış (RTCPeerConnection üzerindeki mikrofon ses göndericisini ASLA ezmez)
+      const videoOnlyStream = new MediaStream([videoTrack]);
+
+      store.setLocalScreenStream(videoOnlyStream);
       store.setScreenSharing(true, sourceName);
       store.setScreenPickerOpen(false);
       soundFX.playStreamStart();
 
-      // 🎬 Ekran paylaşımı başladığında 30 saniyelik dairesel RAM Klip Tamponunu sıfır ek maliyetle başlat
-      replayBuffer.attachToScreenShareStream(stream, sourceName);
+      // 🎬 30sn Klip Tamponu için ekran videosu + klonlanmış miksli ses akışını bağla (canlı mikrofon izinden tamamen izole)
+      const clipAudioTracks = this.processedMicStream
+        ? this.processedMicStream.getAudioTracks().map((t) => t.clone())
+        : desktopAudioTracks.map((t) => t.clone());
+      const clipTracks: MediaStreamTrack[] = [
+        videoTrack.clone(),
+        ...clipAudioTracks,
+      ];
+      replayBuffer.attachToScreenShareStream(
+        new MediaStream(clipTracks),
+        sourceName
+      );
 
       this.socket?.emit('user:updateState', { isScreenSharing: true });
 
+      const micAudioTrack = this.processedMicStream?.getAudioTracks()[0] || null;
+
       for (const [peerSocketId, pc] of this.peerConnections.entries()) {
-        stream.getTracks().forEach((track) => {
-          pc.addTrack(track, stream);
-        });
+        // 1. Mikrofon ses göndericisinin (audio sender) hala aktif olduğunu doğrula
+        if (micAudioTrack) {
+          const audioSender = pc
+            .getSenders()
+            .find((s) => s.track?.kind === 'audio');
+          if (!audioSender && this.processedMicStream) {
+            pc.addTrack(micAudioTrack, this.processedMicStream);
+          }
+        }
+
+        // 2. Ekran video izini ayrı olarak ekle veya sadece mevcut video izini değiştir
+        const existingVideoSender = pc
+          .getSenders()
+          .find((s) => s.track?.kind === 'video');
+        if (existingVideoSender) {
+          await existingVideoSender.replaceTrack(videoTrack);
+        } else {
+          pc.addTrack(videoTrack, videoOnlyStream);
+        }
+
         await this.renegotiatePeer(peerSocketId, pc);
       }
     } catch (err) {
@@ -1031,29 +1136,74 @@ class RealTimeEngine {
     }
   }
 
-  public stopScreenShare() {
-    const store = useSokakStore.getState();
-    const localStream = store.localScreenStream;
+  private cleanupScreenCaptureOnly() {
+    if (this.screenAudioSourceNode) {
+      try {
+        this.screenAudioSourceNode.disconnect();
+      } catch {
+        // yoksay
+      }
+      this.screenAudioSourceNode = null;
+    }
+    if (this.screenAudioGainNode) {
+      try {
+        this.screenAudioGainNode.disconnect();
+      } catch {
+        // yoksay
+      }
+      this.screenAudioGainNode = null;
+    }
 
+    const micTrackIds = new Set<string>([
+      ...(this.rawMicStream?.getTracks().map((t) => t.id) || []),
+      ...(this.processedMicStream?.getTracks().map((t) => t.id) || []),
+    ]);
+
+    if (this.screenRawStream) {
+      this.screenRawStream.getTracks().forEach((track) => {
+        if (!micTrackIds.has(track.id)) {
+          track.stop();
+        }
+      });
+      this.screenRawStream = null;
+    }
+
+    const localStream = useSokakStore.getState().localScreenStream;
     if (localStream) {
-      localStream.getTracks().forEach((track) => {
-        track.stop();
+      localStream.getVideoTracks().forEach((videoTrack) => {
+        if (!micTrackIds.has(videoTrack.id)) {
+          videoTrack.stop();
+        }
         for (const pc of this.peerConnections.values()) {
-          const sender = pc.getSenders().find((s) => s.track === track);
-          if (sender) {
-            pc.removeTrack(sender);
+          const videoSender = pc
+            .getSenders()
+            .find((s) => s.track === videoTrack || s.track?.kind === 'video');
+          if (videoSender) {
+            pc.removeTrack(videoSender);
           }
         }
       });
     }
+  }
+
+  public stopScreenShare() {
+    const store = useSokakStore.getState();
+    const hadScreenShare = Boolean(
+      store.isScreenSharing || store.localScreenStream || this.screenRawStream
+    );
+
+    // Sadece ekran video/ses izlerini durdur — mikrofon izini ASLA durdurma (.stop() çağırma)
+    this.cleanupScreenCaptureOnly();
 
     store.setLocalScreenStream(null);
     store.setScreenSharing(false, null);
     replayBuffer.detachFromScreenShareStream();
     this.socket?.emit('user:updateState', { isScreenSharing: false });
 
-    for (const [peerSocketId, pc] of this.peerConnections.entries()) {
-      this.renegotiatePeer(peerSocketId, pc).catch(() => {});
+    if (hadScreenShare) {
+      for (const [peerSocketId, pc] of this.peerConnections.entries()) {
+        this.renegotiatePeer(peerSocketId, pc).catch(() => {});
+      }
     }
   }
 
@@ -1170,9 +1320,11 @@ class RealTimeEngine {
     const pipeline = this.peerAudioPipelines.get(peerSocketId);
     if (pipeline) {
       try {
-        pipeline.sourceNode.disconnect();
+        for (const entry of pipeline.tracks.values()) {
+          entry.sourceNode.disconnect();
+          entry.audioElement.pause();
+        }
         pipeline.gainNode.disconnect();
-        pipeline.audioElement.pause();
       } catch {
         // yoksay
       }
