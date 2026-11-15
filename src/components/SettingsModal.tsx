@@ -41,6 +41,9 @@ export const SettingsModal: React.FC = () => {
   const lanIps = useSokakStore((s) => s.lanIps);
 
   const noiseGateThresholdDb = useSokakStore((s) => s.noiseGateThresholdDb);
+  const browserNoiseSuppression = useSokakStore(
+    (s) => s.browserNoiseSuppression
+  );
   const currentInputLevelDb = useSokakStore((s) => s.currentInputLevelDb);
   const selectedAudioInputDeviceId = useSokakStore(
     (s) => s.selectedAudioInputDeviceId
@@ -54,6 +57,9 @@ export const SettingsModal: React.FC = () => {
   const clearSession = useSokakStore((s) => s.clearSession);
   const setNoiseGateThresholdDb = useSokakStore(
     (s) => s.setNoiseGateThresholdDb
+  );
+  const setBrowserNoiseSuppression = useSokakStore(
+    (s) => s.setBrowserNoiseSuppression
   );
   const setSelectedAudioInputDeviceId = useSokakStore(
     (s) => s.setSelectedAudioInputDeviceId
@@ -346,7 +352,7 @@ export const SettingsModal: React.FC = () => {
                 <span>Stüdyo Ses Motoru & Mekanik Klavye Gürültü Filtresi</span>
               </div>
               <span className="text-[10px] font-mono text-[#10B981]">
-                Opus 128kbps Stereo CBR + FEC
+                Opus 128kbps Mono (stereo=0) + FEC
               </span>
             </div>
 
@@ -356,7 +362,10 @@ export const SettingsModal: React.FC = () => {
               </label>
               <select
                 value={selectedAudioInputDeviceId}
-                onChange={(e) => setSelectedAudioInputDeviceId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedAudioInputDeviceId(e.target.value);
+                  rtcEngine.reinitializeMicPipeline();
+                }}
                 className="w-full px-3 py-1.5 rounded bg-[#151821] border border-white/[0.08] text-xs text-zinc-100 focus:outline-none"
               >
                 <option value="default">Sistem Varsayılan Mikrofonu</option>
@@ -366,6 +375,32 @@ export const SettingsModal: React.FC = () => {
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* Tarayıcı Gürültü Engelleme Anahtarı (Kulaklık kullanıcıları için robotik sesi önlemek üzere varsayılan KAPALI) */}
+            <div className="flex items-center justify-between py-2 px-3 rounded bg-[#151821]/70 border border-white/[0.06]">
+              <div className="pr-3">
+                <div className="text-xs font-medium text-zinc-200">
+                  Tarayıcı Gürültü Engelleme (Noise Suppression)
+                </div>
+                <div className="text-[11px] text-zinc-400">
+                  Kulaklık mikrofonlarında robotik/metalik ses bozulmasını önlemek için varsayılan olarak kapalıdır (48kHz Saf Mono + Eko Engelleme aktif).
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setBrowserNoiseSuppression(!browserNoiseSuppression);
+                  rtcEngine.reinitializeMicPipeline();
+                }}
+                className={`px-3 py-1 rounded text-xs font-mono font-bold border shrink-0 ${
+                  browserNoiseSuppression
+                    ? 'bg-[#5865F2]/20 border-[#5865F2] text-[#5865F2]'
+                    : 'bg-[#10B981]/15 border-[#10B981]/50 text-[#10B981]'
+                }`}
+              >
+                {browserNoiseSuppression ? 'AÇIK' : 'SAF SES (KAPALI)'}
+              </button>
             </div>
 
             <div className="space-y-2">

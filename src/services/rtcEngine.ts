@@ -310,7 +310,11 @@ class RealTimeEngine {
         const pc = this.peerConnections.get(payload.fromSocketId);
         if (!pc) return;
         try {
-          await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          const remoteAnswer: RTCSessionDescriptionInit = {
+            type: payload.sdp.type,
+            sdp: this.optimizeOpusSdp(payload.sdp.sdp || ''),
+          };
+          await pc.setRemoteDescription(new RTCSessionDescription(remoteAnswer));
         } catch (err) {
           console.warn('Uzak SDP cevabı ayarlanamadı:', err);
         }
@@ -517,13 +521,36 @@ class RealTimeEngine {
     if (!opusPayloadType) return sdp;
 
     const opusParams =
-      'stereo=1;sprop-stereo=1;maxaveragebitrate=128000;cbr=1;useinbandfec=1;usedtx=0';
+      'maxaveragebitrate=128000; stereo=0; sprop-stereo=0; useinbandfec=1; usedtx=0; maxplaybackrate=48000';
+    const managedKeys = new Set([
+      'maxaveragebitrate',
+      'stereo',
+      'sprop-stereo',
+      'useinbandfec',
+      'usedtx',
+      'maxplaybackrate',
+      'cbr',
+    ]);
     let fmtpFound = false;
 
     const updatedLines = lines.map((line) => {
-      if (line.startsWith(`a=fmtp:${opusPayloadType} `)) {
+      const prefix = `a=fmtp:${opusPayloadType} `;
+      if (line.startsWith(prefix)) {
         fmtpFound = true;
-        return `${line};${opusParams}`;
+        const existingRaw = line.slice(prefix.length).trim();
+        const preservedParts = existingRaw
+          .split(';')
+          .map((p) => p.trim())
+          .filter((p) => {
+            if (!p) return false;
+            const key = p.split('=')[0]?.trim().toLowerCase();
+            return key ? !managedKeys.has(key) : false;
+          });
+        const merged =
+          preservedParts.length > 0
+            ? `${preservedParts.join('; ')}; ${opusParams}`
+            : opusParams;
+        return `${prefix}${merged}`;
       }
       return line;
     });
@@ -570,11 +597,11 @@ class RealTimeEngine {
     }
 
     const audioConstraints: MediaTrackConstraints = {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      channelCount: 2,
       sampleRate: 48000,
+      channelCount: 1,
+      echoCancellation: true,
+      noiseSuppression: store.browserNoiseSuppression,
+      autoGainControl: false,
     };
 
     if (
@@ -592,7 +619,13 @@ class RealTimeEngine {
     } catch {
       try {
         this.rawMicStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
+          audio: {
+            sampleRate: 48000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: store.browserNoiseSuppression,
+            autoGainControl: false,
+          },
           video: false,
         });
       } catch {
@@ -610,10 +643,21 @@ class RealTimeEngine {
     gateGain.gain.value = 1.0;
 
     const destination = ctx.createMediaStreamDestination();
+    destination.channelCount = 1;
 
     source.connect(analyser);
     source.connect(gateGain);
     gateGain.connect(destination);
+
+    // Ekran paylaşımı sistem sesi aktifse yeni mikrofon çıkış hedefine tekrar bağla
+    if (this.screenAudioGainNode) {
+      try {
+        this.screenAudioGainNode.disconnect();
+        this.screenAudioGainNode.connect(destination);
+      } catch {
+        // yoksay
+      }
+    }
 
     this.micAnalyserNode = analyser;
     this.micGainGateNode = gateGain;
@@ -624,12 +668,32 @@ class RealTimeEngine {
     return this.processedMicStream;
   }
 
+  public async reinitializeMicPipeline(): Promise<void> {
+    const store = useSokakStore.getState();
+    if (!store.activeVoiceChannelId && !store.isSettingsModalOpen) return;
+
+    const newStream = await this.setupLocalMicPipeline();
+    const newAudioTrack = newStream.getAudioTracks()[0];
+    if (!newAudioTrack) return;
+
+    for (const pc of this.peerConnections.values()) {
+      const audioSender = pc
+        .getSenders()
+        .find((s) => s.track?.kind === 'audio');
+      if (audioSender) {
+        audioSender.replaceTrack(newAudioTrack).catch(() => {});
+      }
+    }
+  }
+
   private startNoiseGateLoop() {
     if (this.noiseGateIntervalId) {
       window.clearInterval(this.noiseGateIntervalId);
     }
 
     const timeDomainBuffer = new Float32Array(512);
+    let lastVoiceDetectedAt = 0;
+    const HOLD_TIME_MS = 380;
 
     this.noiseGateIntervalId = window.setInterval(() => {
       const state = useSokakStore.getState();
@@ -641,7 +705,7 @@ class RealTimeEngine {
         this.micGainGateNode.gain.setTargetAtTime(
           0,
           this.audioContext.currentTime,
-          0.01
+          0.015
         );
         if (state.isSpeaking) {
           state.setSpeaking(false);
@@ -665,13 +729,20 @@ class RealTimeEngine {
         state.setCurrentInputLevelDb(db);
       }
 
-      const gateOpen = db >= state.noiseGateThresholdDb;
+      const now = performance.now();
+      if (db >= state.noiseGateThresholdDb) {
+        lastVoiceDetectedAt = now;
+      }
+
+      const gateOpen =
+        db >= state.noiseGateThresholdDb ||
+        now - lastVoiceDetectedAt < HOLD_TIME_MS;
       const targetGain = gateOpen ? 1.0 : 0.0;
 
       this.micGainGateNode.gain.setTargetAtTime(
         targetGain,
         this.audioContext.currentTime,
-        gateOpen ? 0.008 : 0.04
+        gateOpen ? 0.006 : 0.12
       );
 
       if (state.isSpeaking !== gateOpen) {
@@ -964,7 +1035,13 @@ class RealTimeEngine {
       pc = this.createPeerConnection(fromSocketId);
     }
     try {
-      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const normalizedRemoteOffer: RTCSessionDescriptionInit = {
+        type: sdp.type,
+        sdp: this.optimizeOpusSdp(sdp.sdp || ''),
+      };
+      await pc.setRemoteDescription(
+        new RTCSessionDescription(normalizedRemoteOffer)
+      );
       const answer = await pc.createAnswer();
       const optimizedSdp = this.optimizeOpusSdp(answer.sdp || '');
       const finalAnswer: RTCSessionDescriptionInit = {

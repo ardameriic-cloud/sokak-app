@@ -134,7 +134,7 @@ export const TitleBar: React.FC = () => {
         </div>
 
         <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#12151F] border border-white/[0.07] text-zinc-400">
-          OPUS 128K CBR
+          OPUS 128K MONO
         </span>
 
         {uiFrozen && (

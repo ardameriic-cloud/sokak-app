@@ -31,6 +31,7 @@ const STORAGE_KEYS = {
   AUTH_TOKEN: 'sokak_auth_token',
   SERVER_URL: 'sokak_server_url',
   NOISE_GATE_DB: 'sokak_noise_gate_db',
+  BROWSER_NOISE_SUPPRESSION: 'sokak_browser_noise_suppression',
   GAMING_MODE: 'sokak_gaming_mode',
   USER_VOLUMES: 'sokak_user_volumes',
   MEMBER_LIST_OPEN: 'sokak_member_list_open',
@@ -133,6 +134,7 @@ export interface SokakState {
   isDeafened: boolean;
   isSpeaking: boolean;
   noiseGateThresholdDb: number;
+  browserNoiseSuppression: boolean;
   currentInputLevelDb: number;
   userVolumes: Record<string, UserVolumePreference>;
   selectedAudioInputDeviceId: string;
@@ -204,6 +206,7 @@ export interface SokakState {
   setDeafened: (isDeafened: boolean) => void;
   setSpeaking: (isSpeaking: boolean) => void;
   setNoiseGateThresholdDb: (db: number) => void;
+  setBrowserNoiseSuppression: (enabled: boolean) => void;
   setCurrentInputLevelDb: (db: number) => void;
   setUserVolume: (targetUserId: string, volume: number) => void;
   toggleUserLocalMute: (targetUserId: string) => void;
@@ -296,7 +299,9 @@ export const useSokakStore = create<SokakState>((set, get) => ({
   isMuted: false,
   isDeafened: false,
   isSpeaking: false,
-  noiseGateThresholdDb: Number(localStorage.getItem(STORAGE_KEYS.NOISE_GATE_DB) || -52),
+  noiseGateThresholdDb: Number(localStorage.getItem(STORAGE_KEYS.NOISE_GATE_DB) || -62),
+  browserNoiseSuppression:
+    localStorage.getItem(STORAGE_KEYS.BROWSER_NOISE_SUPPRESSION) === 'true',
   currentInputLevelDb: -85,
   userVolumes: getInitialVolumes(),
   selectedAudioInputDeviceId: 'default',
@@ -315,7 +320,7 @@ export const useSokakStore = create<SokakState>((set, get) => ({
     pingMs: 0,
     bitrateKbps: 128,
     packetLossPercent: 0.0,
-    codec: 'Opus 48kHz Stereo CBR',
+    codec: 'Opus 48kHz Mono 128kbps',
   },
   isGamingMode: localStorage.getItem(STORAGE_KEYS.GAMING_MODE) === 'true',
   isOverlayActive: false,
@@ -325,9 +330,9 @@ export const useSokakStore = create<SokakState>((set, get) => ({
   localClipObjectUrls: {},
   updaterStatus: {
     state: 'idle',
-    version: '1.1.1',
+    version: '1.1.3',
   },
-  appVersion: '1.1.1',
+  appVersion: '1.1.3',
   disableHwAccelOnRestart: false,
   isWindowFocused: true,
   isWindowMinimized: false,
@@ -516,6 +521,11 @@ export const useSokakStore = create<SokakState>((set, get) => ({
   setNoiseGateThresholdDb: (db) => {
     localStorage.setItem(STORAGE_KEYS.NOISE_GATE_DB, String(db));
     set({ noiseGateThresholdDb: db });
+  },
+
+  setBrowserNoiseSuppression: (enabled) => {
+    localStorage.setItem(STORAGE_KEYS.BROWSER_NOISE_SUPPRESSION, String(enabled));
+    set({ browserNoiseSuppression: enabled });
   },
 
   setCurrentInputLevelDb: (db) => set({ currentInputLevelDb: db }),
