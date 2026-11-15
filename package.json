@@ -12,8 +12,8 @@
     "dev:vite": "vite --host 0.0.0.0 --port 5173",
     "dev:desktop": "wait-on tcp:5173 tcp:3001 && tsc -p tsconfig.desktop.json && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
     "build": "tsc -b && vite build && tsc -p tsconfig.desktop.json",
-    "build:win": "npm run build && electron-builder --win --x64",
-    "build:mac": "npm run build && electron-builder --mac --arm64",
+    "build:win": "npm run build && electron-builder --win --x64 --publish never",
+    "build:mac": "npm run build && electron-builder --mac --arm64 --publish never",
     "build:server": "tsc -p tsconfig.server.json",
     "start:server": "node dist-server/index.js"
   },
