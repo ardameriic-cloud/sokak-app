@@ -4,11 +4,11 @@ services:
     runtime: node
     region: frankfurt
     plan: free
-    buildCommand: npm install && npm run build:server
+    buildCommand: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm install --omit=dev
     startCommand: node dist-server/index.js
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3001
+      - key: ELECTRON_SKIP_BINARY_DOWNLOAD
+        value: "1"
