@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-canvas: #07080C;
+  --bg-sidebar: #0C0E14;
+  --bg-panel: #12151F;
+  --bg-dock: #11141D;
+  --border-hairline: rgba(255, 255, 255, 0.07);
+  --accent-indigo: #5865F2;
+  --accent-emerald: #10B981;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #07080C;
+  color: #F4F4F5;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Oyun İçi Şeffaf HUD (Click-Through Overlay) Modu */
+html.sokak-overlay-mode,
+body.sokak-overlay-mode,
+body.sokak-overlay-mode #root {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sürüklenebilir Başlık Çubuğu Alanı */
+.app-drag-region {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Cyber-Obsidian Statik Yüzeyler (Sıfır GPU Maliyeti, Sıfır Blur) */
+.cyber-dot-matrix {
+  background-color: #07080C;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.cyber-sidebar-surface {
+  background-color: #0C0E14;
+  background-image: linear-gradient(180deg, #111420 0%, #0B0D13 100%);
+}
+
+.cyber-voice-active {
+  background-image: linear-gradient(90deg, rgba(16, 185, 129, 0.10) 0%, transparent 100%);
+}
+
+.cyber-text-active {
+  background-image: linear-gradient(90deg, rgba(88, 101, 242, 0.14) 0%, transparent 100%);
+}
+
+/* Yalnızca GPU dostu transform ve opacity geçişleri */
+.gpu-safe-transition {
+  transition-property: transform, opacity;
+  transition-duration: 140ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+/* ⚡ Oyun Modu veya arka plan uyku modunda tüm animasyonları dondur */
+body.sokak-ui-frozen *,
+body.sokak-ui-frozen *::before,
+body.sokak-ui-frozen *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #07080C;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1C202C;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2A3042;
+}

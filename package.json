@@ -1,0 +1,101 @@
+{
+  "name": "sokak",
+  "version": "1.0.0",
+  "description": "SOKAK — Ekip içi anlık sesli ve yazılı iletişim",
+  "main": "dist-desktop/main.js",
+  "author": "SOKAK",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n \"SUNUCU,ARAYUZ,MASAUSTU\" -c \"green,cyan,magenta\" \"npm run dev:server\" \"npm run dev:vite\" \"npm run dev:desktop\"",
+    "dev:server": "tsx watch --exclude \"./server/data/**\" server/index.ts",
+    "dev:vite": "vite --host 0.0.0.0 --port 5173",
+    "dev:desktop": "wait-on tcp:5173 tcp:3001 && tsc -p tsconfig.desktop.json && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
+    "build": "tsc -b && vite build && tsc -p tsconfig.desktop.json",
+    "build:win": "npm run build && electron-builder --win --x64",
+    "build:mac": "npm run build && electron-builder --mac --arm64",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start:server": "node dist-server/index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "lucide-react": "^0.454.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "zustand": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.sokak.desktop",
+    "productName": "SOKAK",
+    "directories": {
+      "output": "release/${version}"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-desktop/**/*"
+    ],
+    "mac": {
+      "artifactName": "SOKAK.${ext}",
+      "category": "public.app-category.social-networking",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal",
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "SOKAK, ekibinle sesli konuşabilmen için mikrofon erişimine ihtiyaç duyar.",
+        "NSScreenCaptureUsageDescription": "SOKAK, oyununu 1080p 60FPS yayınlayabilmen için ekran kaydı iznine ihtiyaç duyar.",
+        "NSAudioCaptureUsageDescription": "SOKAK, yayın sırasında sistem sesini aktarabilmek için ses yakalama iznine ihtiyaç duyar."
+      }
+    },
+    "win": {
+      "artifactName": "SOKAK-Setup.${ext}",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "SOKAK-Setup.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SOKAK"
+    },
+    "copyright": "© SOKAK"
+  }
+}

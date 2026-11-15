@@ -1,0 +1,107 @@
+name: SOKAK Desktop Release (.exe & .dmg)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Installer (SOKAK-Setup.exe)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build SOKAK Windows Installer (.exe)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://sokak-server.onrender.com' }}
+        run: npm run build:win
+
+      - name: Upload SOKAK-Setup.exe Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOKAK-Windows-Installer-exe
+          path: |
+            release/*/SOKAK-Setup.exe
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS Installer (SOKAK.dmg)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build SOKAK macOS Installer (.dmg)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://sokak-server.onrender.com' }}
+        run: npm run build:mac
+
+      - name: Upload SOKAK.dmg Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOKAK-macOS-Installer-dmg
+          path: |
+            release/*/SOKAK.dmg
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release Assets
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SOKAK-Windows-Installer-exe
+          path: artifacts/windows
+
+      - name: Download macOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SOKAK-macOS-Installer-dmg
+          path: artifacts/macos
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.0.0-latest' }}
+          name: 'SOKAK Masaüstü Kurulum Paketleri (Windows .exe & macOS .dmg)'
+          body: |
+            ## ⚡ SOKAK — Masaüstü İndirme Paketleri
+            - **Windows 10/11 (64-bit):** `SOKAK-Setup.exe`
+            - **macOS (Apple Silicon & Intel):** `SOKAK.dmg`
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/windows/**/SOKAK-Setup.exe
+            artifacts/macos/**/SOKAK.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
