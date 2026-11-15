@@ -14,6 +14,7 @@ import {
   ThemeAccentId,
   THEME_ACCENT_PRESETS,
   ToastNotice,
+  UpdaterStatusPayload,
   UserPresence,
   UserVolumePreference,
   WatchTogetherState,
@@ -147,10 +148,16 @@ export interface SokakState {
   isScreenPickerOpen: boolean;
   isSettingsModalOpen: boolean;
 
-  // Telemetri & performans & Oyun İçi Arayüz (Overlay)
+  // Telemetri & performans & Oyun İçi Arayüz (Overlay) & Klip Modu & Oto-Güncelleyici
   telemetry: TelemetryStats;
   isGamingMode: boolean;
   isOverlayActive: boolean;
+  isReplayBufferActive: boolean;
+  replayBufferSeconds: number;
+  isSavingClip: boolean;
+  localClipObjectUrls: Record<string, string>;
+  updaterStatus: UpdaterStatusPayload;
+  appVersion: string;
   disableHwAccelOnRestart: boolean;
   isWindowFocused: boolean;
   isWindowMinimized: boolean;
@@ -214,9 +221,13 @@ export interface SokakState {
   setTelemetry: (stats: Partial<TelemetryStats>) => void;
   setGamingMode: (enabled: boolean) => void;
   setOverlayActive: (active: boolean) => void;
+  setReplayBufferState: (active: boolean, seconds?: number) => void;
+  setSavingClip: (saving: boolean) => void;
+  registerLocalClipUrl: (clipId: string, blobUrl: string) => void;
+  setUpdaterStatus: (status: UpdaterStatusPayload) => void;
   setDisableHwAccelOnRestart: (disabled: boolean) => void;
   setWindowVisibility: (isFocused: boolean, isMinimized: boolean) => void;
-  setPlatformInfo: (platform: string, disableHwAccel: boolean) => void;
+  setPlatformInfo: (platform: string, disableHwAccel: boolean, appVersion?: string) => void;
 }
 
 const DEFAULT_CHANNELS: ChannelDef[] = [
@@ -308,6 +319,15 @@ export const useSokakStore = create<SokakState>((set, get) => ({
   },
   isGamingMode: localStorage.getItem(STORAGE_KEYS.GAMING_MODE) === 'true',
   isOverlayActive: false,
+  isReplayBufferActive: false,
+  replayBufferSeconds: 0,
+  isSavingClip: false,
+  localClipObjectUrls: {},
+  updaterStatus: {
+    state: 'idle',
+    version: '1.1.0',
+  },
+  appVersion: '1.1.0',
   disableHwAccelOnRestart: false,
   isWindowFocused: true,
   isWindowMinimized: false,
@@ -555,13 +575,36 @@ export const useSokakStore = create<SokakState>((set, get) => ({
 
   setOverlayActive: (isOverlayActive) => set({ isOverlayActive }),
 
+  setReplayBufferState: (active, seconds) =>
+    set((state) => ({
+      isReplayBufferActive: active,
+      replayBufferSeconds:
+        typeof seconds === 'number' ? seconds : active ? state.replayBufferSeconds : 0,
+    })),
+
+  setSavingClip: (isSavingClip) => set({ isSavingClip }),
+
+  registerLocalClipUrl: (clipId, blobUrl) =>
+    set((state) => ({
+      localClipObjectUrls: {
+        ...state.localClipObjectUrls,
+        [clipId]: blobUrl,
+      },
+    })),
+
+  setUpdaterStatus: (updaterStatus) => set({ updaterStatus }),
+
   setDisableHwAccelOnRestart: (disabled) => set({ disableHwAccelOnRestart: disabled }),
 
   setWindowVisibility: (isFocused, isMinimized) =>
     set({ isWindowFocused: isFocused, isWindowMinimized: isMinimized }),
 
-  setPlatformInfo: (platform, disableHwAccel) =>
-    set({ platform, disableHwAccelOnRestart: disableHwAccel }),
+  setPlatformInfo: (platform, disableHwAccel, appVersion) =>
+    set((state) => ({
+      platform,
+      disableHwAccelOnRestart: disableHwAccel,
+      ...(appVersion ? { appVersion } : {}),
+    })),
 }));
 
 export function isUiFrozenForGame(state: SokakState): boolean {

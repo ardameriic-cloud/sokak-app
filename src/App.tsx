@@ -26,12 +26,14 @@ export const App: React.FC = () => {
   const activeVoiceChannelId = useSokakStore((s) => s.activeVoiceChannelId);
   const channels = useSokakStore((s) => s.channels);
   const users = useSokakStore((s) => s.users);
+  const updaterStatus = useSokakStore((s) => s.updaterStatus);
 
   const setWindowVisibility = useSokakStore((s) => s.setWindowVisibility);
   const setPlatformInfo = useSokakStore((s) => s.setPlatformInfo);
   const setSession = useSokakStore((s) => s.setSession);
   const clearSession = useSokakStore((s) => s.clearSession);
   const setOverlayActive = useSokakStore((s) => s.setOverlayActive);
+  const setUpdaterStatus = useSokakStore((s) => s.setUpdaterStatus);
 
   // Pencere odak dışı olduğunda tüm CSS animasyonlarını dondur
   useEffect(() => {
@@ -125,6 +127,11 @@ export const App: React.FC = () => {
     window.addEventListener('focus', handleWindowFocus);
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F8') {
+        e.preventDefault();
+        rtcEngine.saveInstantClip();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
         const key = e.key.toLowerCase();
         if (key === 'm') {
@@ -133,6 +140,9 @@ export const App: React.FC = () => {
         } else if (key === 'd') {
           e.preventDefault();
           rtcEngine.toggleDeafen();
+        } else if (key === 's') {
+          e.preventDefault();
+          rtcEngine.saveInstantClip();
         } else if (key === 'o') {
           e.preventDefault();
           if (window.sokakDesktop?.toggleOverlayWindow) {
@@ -151,15 +161,21 @@ export const App: React.FC = () => {
 
     let unsubMute: (() => void) | undefined;
     let unsubDeafen: (() => void) | undefined;
+    let unsubSaveClip: (() => void) | undefined;
     let unsubVisibility: (() => void) | undefined;
     let unsubGameDetected: (() => void) | undefined;
     let unsubOverlayVisibility: (() => void) | undefined;
+    let unsubUpdaterStatus: (() => void) | undefined;
 
     if (window.sokakDesktop) {
       window.sokakDesktop
         .getPlatformInfo()
         .then((info) => {
-          setPlatformInfo(info.platform, info.disableHardwareAcceleration);
+          setPlatformInfo(
+            info.platform,
+            info.disableHardwareAcceleration,
+            info.appVersion
+          );
         })
         .catch(() => {});
 
@@ -170,6 +186,12 @@ export const App: React.FC = () => {
       unsubDeafen = window.sokakDesktop.onToggleDeafenShortcut(() => {
         rtcEngine.toggleDeafen();
       });
+
+      if (window.sokakDesktop.onSaveClipShortcut) {
+        unsubSaveClip = window.sokakDesktop.onSaveClipShortcut(() => {
+          rtcEngine.saveInstantClip();
+        });
+      }
 
       unsubVisibility = window.sokakDesktop.onWindowVisibilityState((state) => {
         setWindowVisibility(state.isFocused, state.isMinimized);
@@ -188,6 +210,12 @@ export const App: React.FC = () => {
           }
         );
       }
+
+      if (window.sokakDesktop.onUpdaterStatus) {
+        unsubUpdaterStatus = window.sokakDesktop.onUpdaterStatus((status) => {
+          setUpdaterStatus(status);
+        });
+      }
     }
 
     return () => {
@@ -197,11 +225,19 @@ export const App: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
       unsubMute?.();
       unsubDeafen?.();
+      unsubSaveClip?.();
       unsubVisibility?.();
       unsubGameDetected?.();
       unsubOverlayVisibility?.();
+      unsubUpdaterStatus?.();
     };
-  }, [isStandaloneOverlay, setPlatformInfo, setWindowVisibility, setOverlayActive]);
+  }, [
+    isStandaloneOverlay,
+    setPlatformInfo,
+    setWindowVisibility,
+    setOverlayActive,
+    setUpdaterStatus,
+  ]);
 
   // İkincil Şeffaf Click-Through Oyun İçi HUD Penceresi (?overlay=1)
   if (isStandaloneOverlay) {
@@ -239,8 +275,38 @@ export const App: React.FC = () => {
       </div>
       <ScreenPickerModal />
       <SettingsModal />
+
+      {/* 🔄 OTOMATİK GÜNCELLEME HAZIR BANNER (Yeni SOKAK güncellemesi hazır — Yeniden Başlat ve Güncelle) */}
+      {updaterStatus.state === 'downloaded' && (
+        <div className="fixed bottom-16 right-4 z-50 max-w-lg px-4 py-3 rounded-md bg-[#12151F] border border-[#10B981] text-xs text-zinc-100 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] shrink-0" />
+            <span className="font-semibold text-zinc-100">
+              Yeni SOKAK güncellemesi hazır — Yeniden Başlat ve Güncelle
+              {updaterStatus.version ? ` (v${updaterStatus.version})` : ''}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              window.sokakDesktop?.installUpdateNow();
+            }}
+            className="px-3 py-1.5 rounded bg-[#10B981] hover:bg-[#059669] text-zinc-950 font-extrabold text-[11px] shrink-0"
+          >
+            Yeniden Başlat ve Güncelle
+          </button>
+        </div>
+      )}
+
       {toastNotice && (
-        <div className="fixed bottom-4 right-4 z-50 max-w-md px-4 py-2.5 rounded-md bg-[#12151F] border border-amber-500/40 text-xs text-zinc-100 flex items-center justify-between gap-3">
+        <div
+          className={`fixed bottom-4 right-4 z-50 max-w-md px-4 py-2.5 rounded-md bg-[#12151F] border text-xs text-zinc-100 flex items-center justify-between gap-3 ${
+            toastNotice.type === 'success'
+              ? 'border-[#10B981]/60'
+              : toastNotice.type === 'info'
+              ? 'border-[#5865F2]/60'
+              : 'border-amber-500/40'
+          }`}
+        >
           <span>{toastNotice.message}</span>
           <button
             onClick={clearToast}

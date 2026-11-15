@@ -29,11 +29,26 @@ export interface OverlayStatePayload {
   occupants: OverlayOccupantItem[];
 }
 
+export interface UpdaterStatusPayload {
+  state:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'downloading'
+    | 'downloaded'
+    | 'up-to-date'
+    | 'error';
+  version?: string;
+  progressPercent?: number;
+  message?: string;
+}
+
 export interface SokakDesktopAPI {
   getPlatformInfo: () => Promise<{
     platform: string;
     disableHardwareAcceleration: boolean;
     isOverlayVisible?: boolean;
+    appVersion?: string;
   }>;
   minimizeWindow: () => void;
   maximizeWindow: () => void;
@@ -42,6 +57,9 @@ export interface SokakDesktopAPI {
   syncOverlayState: (payload: OverlayStatePayload) => void;
   onOverlayVisibilityChanged: (callback: (visible: boolean) => void) => () => void;
   onOverlayStateUpdated: (callback: (payload: OverlayStatePayload) => void) => () => void;
+  checkForUpdates: () => Promise<UpdaterStatusPayload>;
+  installUpdateNow: () => Promise<{ ok: boolean }>;
+  onUpdaterStatus: (callback: (status: UpdaterStatusPayload) => void) => () => void;
   getDesktopSources: () => Promise<DesktopSourceItem[]>;
   selectDesktopSource: (sourceId: string) => Promise<{ ok: boolean; sourceId: string }>;
   setHardwareAccelerationDisabled: (
@@ -50,6 +68,7 @@ export interface SokakDesktopAPI {
   relaunchApp: () => Promise<void>;
   onToggleMuteShortcut: (callback: () => void) => () => void;
   onToggleDeafenShortcut: (callback: () => void) => () => void;
+  onSaveClipShortcut: (callback: () => void) => () => void;
   onWindowVisibilityState: (callback: (state: WindowVisibilityState) => void) => () => void;
   onGameDetected: (callback: (gameName: string | null) => void) => () => void;
 }
@@ -187,6 +206,17 @@ export interface ChatReaction {
   users: string[];
 }
 
+export interface ClipAttachment {
+  id: string;
+  title: string;
+  fileName: string;
+  mimeType: string;
+  durationSec: number;
+  sizeBytes: number;
+  videoUrl: string;
+  sourceName?: string;
+}
+
 export interface ChatMessage {
   id: string;
   channelId: string;
@@ -199,6 +229,7 @@ export interface ChatMessage {
   reactions: ChatReaction[];
   pinned?: boolean;
   pinnedBy?: string;
+  clipAttachment?: ClipAttachment;
 }
 
 export interface PollOption {

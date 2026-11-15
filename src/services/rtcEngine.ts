@@ -1,11 +1,13 @@
 import { io, Socket } from 'socket.io-client';
 import { useSokakStore, isUiFrozenForGame } from '../store/useSokakStore';
 import { soundFX } from './soundFX';
+import { replayBuffer } from './replayBuffer';
 import {
   AccountPublic,
   ChannelDef,
   ChatMessage,
   ChatReaction,
+  ClipAttachment,
   MemberEntry,
   RankRole,
   ReadyCheckState,
@@ -430,8 +432,40 @@ class RealTimeEngine {
     this.socket?.emit('readycheck:clear');
   }
 
-  public sendChatMessage(channelId: string, content: string) {
-    this.socket?.emit('chat:send', { channelId, content });
+  public sendChatMessage(
+    channelId: string,
+    content: string,
+    clipAttachment?: ClipAttachment
+  ) {
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('chat:send', { channelId, content, clipAttachment });
+    } else {
+      const store = useSokakStore.getState();
+      store.appendChatMessage({
+        id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        channelId,
+        userId: store.userId || 'local',
+        username: store.username || 'Oyuncu',
+        rank: store.rank,
+        avatarColor: store.avatarColor,
+        content,
+        timestamp: new Date().toISOString(),
+        reactions: [],
+        ...(clipAttachment ? { clipAttachment } : {}),
+      });
+    }
+  }
+
+  public async toggleReplayBufferMode(): Promise<boolean> {
+    return await replayBuffer.toggleReplayMode();
+  }
+
+  public async saveInstantClip(): Promise<boolean> {
+    return await replayBuffer.captureAndShareClip(
+      (channelId, content, attachment) => {
+        this.sendChatMessage(channelId, content, attachment);
+      }
+    );
   }
 
   public toggleMessageReaction(
@@ -981,6 +1015,9 @@ class RealTimeEngine {
       store.setScreenPickerOpen(false);
       soundFX.playStreamStart();
 
+      // 🎬 Ekran paylaşımı başladığında 30 saniyelik dairesel RAM Klip Tamponunu sıfır ek maliyetle başlat
+      replayBuffer.attachToScreenShareStream(stream, sourceName);
+
       this.socket?.emit('user:updateState', { isScreenSharing: true });
 
       for (const [peerSocketId, pc] of this.peerConnections.entries()) {
@@ -1012,6 +1049,7 @@ class RealTimeEngine {
 
     store.setLocalScreenStream(null);
     store.setScreenSharing(false, null);
+    replayBuffer.detachFromScreenShareStream();
     this.socket?.emit('user:updateState', { isScreenSharing: false });
 
     for (const [peerSocketId, pc] of this.peerConnections.entries()) {

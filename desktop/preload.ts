@@ -28,11 +28,26 @@ export interface OverlayStatePayload {
   }>;
 }
 
+export interface UpdaterStatusPayload {
+  state:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'downloading'
+    | 'downloaded'
+    | 'up-to-date'
+    | 'error';
+  version?: string;
+  progressPercent?: number;
+  message?: string;
+}
+
 const sokakDesktopAPI = {
   getPlatformInfo: (): Promise<{
     platform: string;
     disableHardwareAcceleration: boolean;
     isOverlayVisible?: boolean;
+    appVersion?: string;
   }> => ipcRenderer.invoke('window:get-platform'),
 
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
@@ -55,6 +70,18 @@ const sokakDesktopAPI = {
     const handler = (_event: unknown, payload: OverlayStatePayload) => callback(payload);
     ipcRenderer.on('overlay:state-updated', handler);
     return () => ipcRenderer.removeListener('overlay:state-updated', handler);
+  },
+
+  checkForUpdates: (): Promise<UpdaterStatusPayload> =>
+    ipcRenderer.invoke('updater:check'),
+
+  installUpdateNow: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('updater:install-now'),
+
+  onUpdaterStatus: (callback: (status: UpdaterStatusPayload) => void) => {
+    const handler = (_event: unknown, status: UpdaterStatusPayload) => callback(status);
+    ipcRenderer.on('updater:status', handler);
+    return () => ipcRenderer.removeListener('updater:status', handler);
   },
 
   getDesktopSources: (): Promise<DesktopSourceItem[]> =>
@@ -80,6 +107,12 @@ const sokakDesktopAPI = {
     const handler = () => callback();
     ipcRenderer.on('shortcut:toggle-deafen', handler);
     return () => ipcRenderer.removeListener('shortcut:toggle-deafen', handler);
+  },
+
+  onSaveClipShortcut: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('shortcut:save-clip', handler);
+    return () => ipcRenderer.removeListener('shortcut:save-clip', handler);
   },
 
   onWindowVisibilityState: (callback: (state: WindowVisibilityState) => void) => {

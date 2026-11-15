@@ -21,6 +21,7 @@ import {
   Users,
   MonitorUp,
   ShieldCheck,
+  Camera,
 } from 'lucide-react';
 import { useSokakStore } from '../store/useSokakStore';
 import { rtcEngine } from '../services/rtcEngine';
@@ -65,6 +66,7 @@ export const StreamStage: React.FC = () => {
 
   const isStreamPausedForFps = useSokakStore((s) => s.isStreamPausedForFps);
   const isTheaterMode = useSokakStore((s) => s.isTheaterMode);
+  const isSavingClip = useSokakStore((s) => s.isSavingClip);
   const isWindowFocused = useSokakStore((s) => s.isWindowFocused);
   const isWindowMinimized = useSokakStore((s) => s.isWindowMinimized);
 
@@ -279,6 +281,18 @@ export const StreamStage: React.FC = () => {
 
         {/* Sahne Aksiyonları */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => rtcEngine.saveInstantClip()}
+            disabled={isSavingClip}
+            className="px-2.5 py-1 rounded bg-[#12151F] hover:bg-[#1A1F2E] border border-[#5865F2]/50 text-zinc-100 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+            title="🎬 Son 30 Sn Klip Al (F8 veya Ctrl+Shift+S) — #klipler-ve-linkler kanalına gönderir"
+          >
+            <Camera className="w-3.5 h-3.5 text-[#10B981]" />
+            <span>
+              {isSavingClip ? 'Kaydediliyor...' : '🎬 Son 30 Sn Klip Al (F8)'}
+            </span>
+          </button>
+
           {hasMediaStage && (
             <button
               onClick={() => setShowCardsInMediaRoom(!showCardsInMediaRoom)}

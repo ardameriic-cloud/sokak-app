@@ -1,6 +1,6 @@
 {
   "name": "sokak",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "SOKAK — Ekip içi anlık sesli ve yazılı iletişim",
   "main": "dist-desktop/main.js",
   "author": "SOKAK",
@@ -20,6 +20,7 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
+    "electron-updater": "^6.8.11",
     "express": "^4.21.1",
     "lucide-react": "^0.454.0",
     "react": "^18.3.1",
@@ -51,6 +52,14 @@
   "build": {
     "appId": "com.sokak.desktop",
     "productName": "SOKAK",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ardameriic-cloud",
+        "repo": "sokak-app",
+        "releaseType": "release"
+      }
+    ],
     "directories": {
       "output": "release/${version}"
     },

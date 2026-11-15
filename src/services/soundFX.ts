@@ -111,6 +111,44 @@ class SoundFXEngine {
     this.playTone(493.88, 659.25, 0.07, 'sine', 0.06, 0);
     this.playTone(659.25, 987.77, 0.12, 'triangle', 0.07, 0.06);
   }
+
+  public playClipShutter() {
+    // 🎬 Kamera Deklanşör Sesi + Taktiksel Onay Tonu (Anlık 30 Sn Klip)
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+
+    // 1. Kısa mekanik deklanşör tıkırtısı (yüksek frekanslı darbe)
+    const bufferSize = Math.floor(ctx.sampleRate * 0.045);
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      const env = Math.exp(-i / (bufferSize * 0.22));
+      output[i] = (Math.random() * 2 - 1) * env;
+    }
+
+    const whiteNoise = ctx.createBufferSource();
+    whiteNoise.buffer = noiseBuffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(2400, now);
+    filter.Q.setValueAtTime(1.8, now);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.14, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+
+    whiteNoise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    whiteNoise.start(now);
+
+    // 2. İkinci deklanşör perdesi + Zümrüt onay tınısı
+    this.playTone(1200, 380, 0.035, 'triangle', 0.07, 0.04);
+    this.playTone(783.99, 1046.5, 0.13, 'sine', 0.075, 0.08);
+  }
 }
 
 export const soundFX = new SoundFXEngine();

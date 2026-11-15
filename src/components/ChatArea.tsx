@@ -13,6 +13,9 @@ import {
   Plus,
   X,
   CheckCircle2,
+  Camera,
+  Download,
+  Film,
 } from 'lucide-react';
 import { useSokakStore } from '../store/useSokakStore';
 import { rtcEngine } from '../services/rtcEngine';
@@ -93,6 +96,8 @@ export const ChatArea: React.FC = () => {
   const members = useSokakStore((s) => s.members);
   const themeAccent = useSokakStore((s) => s.themeAccent);
   const isMemberListOpen = useSokakStore((s) => s.isMemberListOpen);
+  const isSavingClip = useSokakStore((s) => s.isSavingClip);
+  const localClipObjectUrls = useSokakStore((s) => s.localClipObjectUrls);
   const setMemberListOpen = useSokakStore((s) => s.setMemberListOpen);
   const setScreenPickerOpen = useSokakStore((s) => s.setScreenPickerOpen);
 
@@ -210,6 +215,19 @@ export const ChatArea: React.FC = () => {
             <span className="hidden sm:inline">Anket</span>
           </button>
 
+          {/* 🎬 Son 30 Sn Klip Al (F8) Butonu */}
+          <button
+            onClick={() => rtcEngine.saveInstantClip()}
+            disabled={isSavingClip}
+            className="px-2.5 py-1 rounded bg-[#12151F] hover:bg-[#1C202C] border border-[#5865F2]/50 text-xs font-semibold text-zinc-100 flex items-center gap-1.5 disabled:opacity-50"
+            title="🎬 Son 30 Sn Klip Al (F8 veya Ctrl+Shift+S) — #klipler-ve-linkler kanalında otomatik paylaşır"
+          >
+            <Camera className="w-3.5 h-3.5 text-[#10B981]" />
+            <span className="hidden md:inline">
+              {isSavingClip ? 'Kaydediliyor...' : '🎬 Son 30 Sn Klip Al (F8)'}
+            </span>
+          </button>
+
           {selectedTextChannelId === 'text-klipler' && (
             <button
               onClick={handleQuickClipShare}
@@ -217,7 +235,7 @@ export const ChatArea: React.FC = () => {
               title="Örnek Oyun Görseli Gönder"
             >
               <ImageIcon className="w-3.5 h-3.5 text-[#5865F2]" />
-              <span className="hidden md:inline">Örnek Klip Paylaş</span>
+              <span className="hidden xl:inline">Örnek Görsel</span>
             </button>
           )}
 
@@ -562,6 +580,54 @@ export const ChatArea: React.FC = () => {
                         </React.Fragment>
                       ))}
                     </div>
+
+                    {/* 🎬 ANLIK 30 SN .WEBM VİDEO KLİP OYNATICISI + BİLGİSAYARA İNDİR BUTONU */}
+                    {msg.clipAttachment && (
+                      <div className="mt-3 rounded-md overflow-hidden bg-[#0C0E14] border border-[#10B981]/35 max-w-xl">
+                        <div className="px-3 py-2 bg-[#12151F] border-b border-white/[0.07] flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="px-1.5 py-0.5 rounded bg-[#10B981]/20 border border-[#10B981]/40 text-[#10B981] text-[9px] font-mono font-bold uppercase flex items-center gap-1 shrink-0">
+                              <Film className="w-3 h-3" />
+                              <span>{msg.clipAttachment.durationSec}SN KLİP</span>
+                            </span>
+                            <span className="text-xs font-bold text-zinc-100 truncate">
+                              {msg.clipAttachment.title}
+                            </span>
+                            <span className="text-[10px] font-mono text-zinc-400 shrink-0">
+                              {(
+                                msg.clipAttachment.sizeBytes /
+                                (1024 * 1024)
+                              ).toFixed(1)}{' '}
+                              MB
+                            </span>
+                          </div>
+
+                          <a
+                            href={
+                              localClipObjectUrls[msg.clipAttachment.id] ||
+                              msg.clipAttachment.videoUrl
+                            }
+                            download={msg.clipAttachment.fileName}
+                            className="px-2.5 py-1 rounded bg-[#10B981] hover:bg-[#059669] text-zinc-950 text-[11px] font-extrabold flex items-center gap-1 shrink-0"
+                            title="Klibi .webm olarak bilgisayara indir"
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>Bilgisayara İndir</span>
+                          </a>
+                        </div>
+
+                        <video
+                          src={
+                            localClipObjectUrls[msg.clipAttachment.id] ||
+                            msg.clipAttachment.videoUrl
+                          }
+                          controls
+                          playsInline
+                          preload="metadata"
+                          className="w-full max-h-80 bg-[#07080C] object-contain block"
+                        />
+                      </div>
+                    )}
 
                     {imageUrls.length > 0 && (
                       <div className="mt-2.5 flex flex-wrap gap-2">

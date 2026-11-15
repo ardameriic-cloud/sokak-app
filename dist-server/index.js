@@ -14,7 +14,8 @@ app.use((0, cors_1.default)({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 }));
-app.use(express_1.default.json({ limit: '1mb' }));
+app.use(express_1.default.json({ limit: '25mb' }));
+app.use(express_1.default.raw({ type: ['video/webm', 'application/octet-stream'], limit: '25mb' }));
 const server = http_1.default.createServer(app);
 const io = new socket_io_1.Server(server, {
     cors: {
@@ -23,7 +24,7 @@ const io = new socket_io_1.Server(server, {
     },
     pingInterval: 5000,
     pingTimeout: 10000,
-    maxHttpBufferSize: 1e6,
+    maxHttpBufferSize: 25e6,
 });
 const DEFAULT_CHANNELS = [
     { id: 'text-genel', name: 'genel-sohbet', type: 'text', badge: 'SOHBET' },
@@ -228,6 +229,71 @@ app.post('/api/auth/logout', (req, res) => {
             s.disconnect(true);
     }
     res.json({ ok: true });
+});
+const recentClipBuffers = [];
+const MAX_STORED_CLIPS = 12;
+app.post('/api/clips', (req, res) => {
+    const acc = accountStore_1.accountStore.resolveToken(getBearerToken(req));
+    if (!acc) {
+        res.status(401).json({ error: 'Oturum geçersiz.' });
+        return;
+    }
+    let buf = null;
+    if (Buffer.isBuffer(req.body)) {
+        buf = req.body;
+    }
+    else if (req.body && typeof req.body.base64 === 'string') {
+        buf = Buffer.from(req.body.base64, 'base64');
+    }
+    if (!buf || buf.length === 0) {
+        res.status(400).json({ error: 'Boş klip verisi.' });
+        return;
+    }
+    const clipId = `clip-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const fileName = `SOKAK-Klip-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+    recentClipBuffers.push({
+        id: clipId,
+        buffer: buf,
+        mimeType: 'video/webm',
+        fileName,
+        createdAt: Date.now(),
+    });
+    while (recentClipBuffers.length > MAX_STORED_CLIPS) {
+        recentClipBuffers.shift();
+    }
+    res.status(201).json({
+        ok: true,
+        clipId,
+        fileName,
+        sizeBytes: buf.length,
+        path: `/api/clips/${clipId}.webm`,
+    });
+});
+app.get('/api/clips/:clipFile', (req, res) => {
+    const rawParam = String(req.params.clipFile || '').replace(/\.webm$/i, '');
+    const entry = recentClipBuffers.find((c) => c.id === rawParam);
+    if (!entry) {
+        res.status(404).send('Klip bulunamadı veya bellekten silindi.');
+        return;
+    }
+    const total = entry.buffer.length;
+    const range = req.headers.range;
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Type', entry.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${entry.fileName}"`);
+    if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10) || 0;
+        const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+        const chunkSize = Math.max(0, end - start + 1);
+        res.status(206);
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+        res.setHeader('Content-Length', String(chunkSize));
+        res.end(entry.buffer.subarray(start, end + 1));
+        return;
+    }
+    res.setHeader('Content-Length', String(total));
+    res.status(200).end(entry.buffer);
 });
 // ───────────── Socket.io: Token doğrulama ─────────────
 io.use((socket, next) => {
@@ -502,7 +568,7 @@ io.on('connection', (socket) => {
             candidate: payload.candidate,
         });
     });
-    // Yazılı sohbet ve emoji tepkileri
+    // Yazılı sohbet, anlık klip paylaşımı ve emoji tepkileri
     socket.on('chat:send', (payload) => {
         const sender = users.get(socket.id);
         if (!sender || typeof payload?.content !== 'string' || !payload.content.trim())
@@ -517,6 +583,7 @@ io.on('connection', (socket) => {
             content: payload.content.trim().slice(0, 4000),
             timestamp: new Date().toISOString(),
             reactions: [],
+            ...(payload.clipAttachment ? { clipAttachment: payload.clipAttachment } : {}),
         };
         if (!messagesByChannel[payload.channelId]) {
             messagesByChannel[payload.channelId] = [];
