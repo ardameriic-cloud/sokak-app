@@ -13,7 +13,6 @@ import {
   Plus,
   X,
   CheckCircle2,
-  Camera,
   Download,
   Film,
 } from 'lucide-react';
@@ -96,7 +95,6 @@ export const ChatArea: React.FC = () => {
   const members = useSokakStore((s) => s.members);
   const themeAccent = useSokakStore((s) => s.themeAccent);
   const isMemberListOpen = useSokakStore((s) => s.isMemberListOpen);
-  const isSavingClip = useSokakStore((s) => s.isSavingClip);
   const localClipObjectUrls = useSokakStore((s) => s.localClipObjectUrls);
   const setMemberListOpen = useSokakStore((s) => s.setMemberListOpen);
   const setScreenPickerOpen = useSokakStore((s) => s.setScreenPickerOpen);
@@ -213,19 +211,6 @@ export const ChatArea: React.FC = () => {
           >
             <BarChart3 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Anket</span>
-          </button>
-
-          {/* 🎬 Son 30 Sn Klip Al (F8) Butonu */}
-          <button
-            onClick={() => rtcEngine.saveInstantClip()}
-            disabled={isSavingClip}
-            className="px-2.5 py-1 rounded bg-[#12151F] hover:bg-[#1C202C] border border-[#5865F2]/50 text-xs font-semibold text-zinc-100 flex items-center gap-1.5 disabled:opacity-50"
-            title="🎬 Son 30 Sn Klip Al (F8 veya Ctrl+Shift+S) — #klipler-ve-linkler kanalında otomatik paylaşır"
-          >
-            <Camera className="w-3.5 h-3.5 text-[#10B981]" />
-            <span className="hidden md:inline">
-              {isSavingClip ? 'Kaydediliyor...' : '🎬 Son 30 Sn Klip Al (F8)'}
-            </span>
           </button>
 
           {selectedTextChannelId === 'text-klipler' && (
