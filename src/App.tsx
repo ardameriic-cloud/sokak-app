@@ -128,11 +128,6 @@ export const App: React.FC = () => {
     window.addEventListener('focus', handleWindowFocus);
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F8') {
-        e.preventDefault();
-        rtcEngine.saveInstantClip();
-        return;
-      }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
         const key = e.key.toLowerCase();
         if (key === 'm') {
@@ -141,9 +136,6 @@ export const App: React.FC = () => {
         } else if (key === 'd') {
           e.preventDefault();
           rtcEngine.toggleDeafen();
-        } else if (key === 's') {
-          e.preventDefault();
-          rtcEngine.saveInstantClip();
         } else if (key === 'o') {
           e.preventDefault();
           if (window.sokakDesktop?.toggleOverlayWindow) {
@@ -162,7 +154,6 @@ export const App: React.FC = () => {
 
     let unsubMute: (() => void) | undefined;
     let unsubDeafen: (() => void) | undefined;
-    let unsubSaveClip: (() => void) | undefined;
     let unsubVisibility: (() => void) | undefined;
     let unsubGameDetected: (() => void) | undefined;
     let unsubOverlayVisibility: (() => void) | undefined;
@@ -187,12 +178,6 @@ export const App: React.FC = () => {
       unsubDeafen = window.sokakDesktop.onToggleDeafenShortcut(() => {
         rtcEngine.toggleDeafen();
       });
-
-      if (window.sokakDesktop.onSaveClipShortcut) {
-        unsubSaveClip = window.sokakDesktop.onSaveClipShortcut(() => {
-          rtcEngine.saveInstantClip();
-        });
-      }
 
       unsubVisibility = window.sokakDesktop.onWindowVisibilityState((state) => {
         setWindowVisibility(state.isFocused, state.isMinimized);
@@ -226,7 +211,6 @@ export const App: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
       unsubMute?.();
       unsubDeafen?.();
-      unsubSaveClip?.();
       unsubVisibility?.();
       unsubGameDetected?.();
       unsubOverlayVisibility?.();

@@ -568,12 +568,6 @@ function setupSystemTray() {
         },
       },
       {
-        label: '🎬 Son 30 Sn Klip Al (F8 / Ctrl+Shift+S)',
-        click: () => {
-          mainWindow?.webContents.send('shortcut:save-clip');
-        },
-      },
-      {
         label: '🎯 Oyun İçi Arayüz (Overlay) Aç/Kapat (Ctrl+Shift+O)',
         click: () => {
           toggleOverlayWindow();
@@ -866,15 +860,6 @@ function registerGlobalHardwareShortcuts() {
 
   globalShortcut.register('CommandOrControl+Shift+O', () => {
     toggleOverlayWindow();
-  });
-
-  // 🎬 Son 30 Saniye Anlık Klip Alma Kısayolları (F8 ve Ctrl+Shift+S)
-  globalShortcut.register('F8', () => {
-    mainWindow?.webContents.send('shortcut:save-clip');
-  });
-
-  globalShortcut.register('CommandOrControl+Shift+S', () => {
-    mainWindow?.webContents.send('shortcut:save-clip');
   });
 }
 

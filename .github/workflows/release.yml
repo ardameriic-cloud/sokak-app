@@ -96,16 +96,16 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.4' }}
-          name: 'SOKAK v1.1.4 — Masaüstü Kurulum Paketleri (Windows .exe & macOS .dmg)'
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.5' }}
+          name: 'SOKAK v1.1.5 — Masaüstü Kurulum Paketleri (Windows .exe & macOS .dmg)'
           body: |
-            ## ⚡ SOKAK v1.1.4 — Masaüstü İndirme Paketleri
+            ## ⚡ SOKAK v1.1.5 — Masaüstü İndirme Paketleri
             - **Windows 10/11 (64-bit):** `SOKAK-Setup.exe`
             - **macOS (Apple Silicon):** `SOKAK.dmg`
-            - **Yenilikler (v1.1.4):**
-              - 🚀 **Sıfır FPS Kaybı & Arka Plan Oyun Optimizasyonu:** Oyuna geçtiğiniz anda (`blur`/`minimize`) SOKAK pencere yenileme hızı otomatik olarak `1-2 FPS` uyku moduna düşürülür, sahnedeki `<video>` GPU çözümlemesi duraklatılır ve arka plan DWM/DXGI pencere taraması sıfır-GPU süreç kontrolü ile değiştirildi.
+            - **Yenilikler (v1.1.5):**
+              - 🚀 **Klip Tamponu Kaldırıldı & Sıfır FPS Kaybı (0% Arka Plan Video Kodlama):** Arka planda sürekli çalışan `MediaRecorder` klip tamponu tamamen kaldırıldı; oyuna geçtiğiniz anda (`blur`/`minimize`) SOKAK pencere yenileme hızı `1-2 FPS` uyku moduna düşer ve oyunlarda hiçbir FPS kaybı yaşanmaz.
               - 🎧 **128kbps Saf Mono Opus (`stereo=0`) & Temiz Ses Hattı:** Robotik/metalik sesi tamamen engelleyen `48kHz Mono 128kbps` Opus ses motoru.
-              - 🖥️ **Ekran Paylaşımı + Mikrofon Koruması & 30 Sn Klip (`F8`):** Yayın sırasında kesintisiz mikrofon + masaüstü sesi mikseri ve `electron-updater` otomatik güncelleme.
+              - 🖥️ **Ekran Paylaşımı + Mikrofon Koruması & Oto-Güncelleme:** Yayın sırasında kesintisiz mikrofon + masaüstü sesi mikseri ve `electron-updater` otomatik güncelleme.
           draft: false
           prerelease: false
           make_latest: true

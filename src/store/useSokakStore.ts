@@ -330,9 +330,9 @@ export const useSokakStore = create<SokakState>((set, get) => ({
   localClipObjectUrls: {},
   updaterStatus: {
     state: 'idle',
-    version: '1.1.4',
+    version: '1.1.5',
   },
-  appVersion: '1.1.4',
+  appVersion: '1.1.5',
   disableHwAccelOnRestart: false,
   isWindowFocused: true,
   isWindowMinimized: false,

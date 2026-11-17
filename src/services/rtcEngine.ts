@@ -1,7 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { useSokakStore, isUiFrozenForGame } from '../store/useSokakStore';
 import { soundFX } from './soundFX';
-import { replayBuffer } from './replayBuffer';
 import {
   AccountPublic,
   ChannelDef,
@@ -469,18 +468,6 @@ class RealTimeEngine {
         ...(clipAttachment ? { clipAttachment } : {}),
       });
     }
-  }
-
-  public async toggleReplayBufferMode(): Promise<boolean> {
-    return await replayBuffer.toggleReplayMode();
-  }
-
-  public async saveInstantClip(): Promise<boolean> {
-    return await replayBuffer.captureAndShareClip(
-      (channelId, content, attachment) => {
-        this.sendChatMessage(channelId, content, attachment);
-      }
-    );
   }
 
   public toggleMessageReaction(
@@ -1179,19 +1166,6 @@ class RealTimeEngine {
       store.setScreenPickerOpen(false);
       soundFX.playStreamStart();
 
-      // 🎬 30sn Klip Tamponu için ekran videosu + klonlanmış miksli ses akışını bağla (canlı mikrofon izinden tamamen izole)
-      const clipAudioTracks = this.processedMicStream
-        ? this.processedMicStream.getAudioTracks().map((t) => t.clone())
-        : desktopAudioTracks.map((t) => t.clone());
-      const clipTracks: MediaStreamTrack[] = [
-        videoTrack.clone(),
-        ...clipAudioTracks,
-      ];
-      replayBuffer.attachToScreenShareStream(
-        new MediaStream(clipTracks),
-        sourceName
-      );
-
       this.socket?.emit('user:updateState', { isScreenSharing: true });
 
       const micAudioTrack = this.processedMicStream?.getAudioTracks()[0] || null;
@@ -1285,7 +1259,6 @@ class RealTimeEngine {
 
     store.setLocalScreenStream(null);
     store.setScreenSharing(false, null);
-    replayBuffer.detachFromScreenShareStream();
     this.socket?.emit('user:updateState', { isScreenSharing: false });
 
     if (hadScreenShare) {

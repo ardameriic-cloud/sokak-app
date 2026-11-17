@@ -16,8 +16,6 @@ import {
   ShieldCheck,
   Lock,
   Crosshair,
-  Film,
-  Camera,
   X,
 } from 'lucide-react';
 import { useSokakStore } from '../store/useSokakStore';
@@ -59,9 +57,6 @@ export const Sidebar: React.FC = () => {
 
   const isGamingMode = useSokakStore((s) => s.isGamingMode);
   const isOverlayActive = useSokakStore((s) => s.isOverlayActive);
-  const isReplayBufferActive = useSokakStore((s) => s.isReplayBufferActive);
-  const replayBufferSeconds = useSokakStore((s) => s.replayBufferSeconds);
-  const isSavingClip = useSokakStore((s) => s.isSavingClip);
   const themeAccent = useSokakStore((s) => s.themeAccent);
   const isWindowFocused = useSokakStore((s) => s.isWindowFocused);
   const isWindowMinimized = useSokakStore((s) => s.isWindowMinimized);
@@ -667,38 +662,6 @@ export const Sidebar: React.FC = () => {
             >
               <Zap className="w-3.5 h-3.5" />
               <span>⚡ FPS</span>
-            </button>
-          </div>
-
-          {/* 🎬 30 Saniye Anlık Klip Tamponu (Klip Modu + Son 30 Sn Klip Al F8) */}
-          <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-            <button
-              onClick={() => rtcEngine.toggleReplayBufferMode()}
-              className={`px-2 py-1.5 rounded text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 border ${
-                isReplayBufferActive
-                  ? 'bg-[#10B981]/20 border-[#10B981] text-[#10B981]'
-                  : 'bg-[#07080C] hover:bg-[#161B26] border-white/[0.08] text-zinc-300'
-              }`}
-              title="🎬 Klip Modu: Son 30 saniyeyi sıfır disk kullanımıyla (0 FPS kaybı) RAM'de tutar"
-            >
-              <Film className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">
-                {isReplayBufferActive
-                  ? `🎬 Klip Modu (${replayBufferSeconds}s)`
-                  : '🎬 Klip Modu'}
-              </span>
-            </button>
-
-            <button
-              onClick={() => rtcEngine.saveInstantClip()}
-              disabled={isSavingClip}
-              className="px-2 py-1.5 rounded text-[10px] font-mono font-bold flex items-center justify-center gap-1 border bg-[#5865F2]/20 hover:bg-[#5865F2]/35 border-[#5865F2] text-zinc-100 disabled:opacity-50"
-              title="🎬 Son 30 Sn Klip Al (F8 veya Ctrl+Shift+S) — #klipler-ve-linkler kanalında otomatik paylaşır"
-            >
-              <Camera className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
-              <span className="truncate">
-                {isSavingClip ? 'Kaydediliyor...' : '🎬 Son 30 Sn Klip Al (F8)'}
-              </span>
             </button>
           </div>
         </div>
