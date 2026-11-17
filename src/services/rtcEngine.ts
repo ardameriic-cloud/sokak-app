@@ -143,9 +143,11 @@ class RealTimeEngine {
     socket.on(
       'voice:userSpeaking',
       (payload: { socketId: string; userId: string; isSpeaking: boolean }) => {
-        useSokakStore
-          .getState()
-          .updateUserSpeaking(payload.socketId, payload.isSpeaking);
+        const st = useSokakStore.getState();
+        if (isUiFrozenForGame(st) && !st.isOverlayActive) {
+          return;
+        }
+        st.updateUserSpeaking(payload.socketId, payload.isSpeaking);
       }
     );
 
@@ -693,6 +695,7 @@ class RealTimeEngine {
 
     const timeDomainBuffer = new Float32Array(512);
     let lastVoiceDetectedAt = 0;
+    let lastEmittedSpeaking = false;
     const HOLD_TIME_MS = 380;
 
     this.noiseGateIntervalId = window.setInterval(() => {
@@ -707,8 +710,11 @@ class RealTimeEngine {
           this.audioContext.currentTime,
           0.015
         );
-        if (state.isSpeaking) {
-          state.setSpeaking(false);
+        if (lastEmittedSpeaking || state.isSpeaking) {
+          lastEmittedSpeaking = false;
+          if (!isUiFrozenForGame(state) || state.isOverlayActive) {
+            state.setSpeaking(false);
+          }
           this.socket?.emit('voice:speaking', false);
         }
         if (!isUiFrozenForGame(state)) {
@@ -745,9 +751,14 @@ class RealTimeEngine {
         gateOpen ? 0.006 : 0.12
       );
 
-      if (state.isSpeaking !== gateOpen) {
-        state.setSpeaking(gateOpen);
+      if (lastEmittedSpeaking !== gateOpen) {
+        lastEmittedSpeaking = gateOpen;
         this.socket?.emit('voice:speaking', gateOpen);
+      }
+      if (!isUiFrozenForGame(state) || state.isOverlayActive) {
+        if (state.isSpeaking !== gateOpen) {
+          state.setSpeaking(gateOpen);
+        }
       }
     }, 65);
   }

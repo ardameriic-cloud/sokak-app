@@ -68,6 +68,10 @@ if (initialConfig.disableHardwareAcceleration) {
   app.disableHardwareAcceleration();
 }
 
+// Arka planda ses kesilmesini önlerken GPU/CPU tüketimini sınırla
+app.commandLine.appendSwitch('disable-background-media-suspend');
+app.commandLine.appendSwitch('webrtc-max-cpu-consumption-percentage', '45');
+
 app.setName('SOKAK');
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.sokak.desktop');
@@ -635,39 +639,34 @@ function startLightweightGameDetection() {
     clearInterval(gameDetectIntervalId);
   }
 
-  const checkOpenWindowTitles = async () => {
+  // Sıfır GPU / Sıfır DWM kancası: desktopCapturer.getSources() yerine hafif süreç listesi kontrolü
+  const checkRunningGameProcesses = () => {
     if (!mainWindow || isQuitting) return;
-    try {
-      const windows = await desktopCapturer.getSources({
-        types: ['window'],
-        thumbnailSize: { width: 0, height: 0 },
-        fetchWindowIcons: false,
-      });
+    const cmd =
+      process.platform === 'win32'
+        ? 'tasklist /FO CSV /NH'
+        : 'ps -axo comm';
 
+    exec(cmd, { timeout: 3000, windowsHide: true }, (err, stdout) => {
+      if (err || !stdout || !mainWindow || mainWindow.isDestroyed()) return;
+      const lowerOut = stdout.toLowerCase();
       let foundGame: string | null = null;
-      for (const win of windows) {
-        const lowerTitle = (win.name || '').toLowerCase();
-        if (lowerTitle.includes('sokak')) continue;
 
-        for (const game of KNOWN_GAMES) {
-          if (game.keywords.some((kw) => lowerTitle.includes(kw))) {
-            foundGame = game.display;
-            break;
-          }
+      for (const game of KNOWN_GAMES) {
+        if (game.keywords.some((kw) => lowerOut.includes(kw))) {
+          foundGame = game.display;
+          break;
         }
-        if (foundGame) break;
       }
 
       if (foundGame !== lastDetectedGame) {
         lastDetectedGame = foundGame;
         mainWindow.webContents.send('game:detected', foundGame);
       }
-    } catch {
-      // Ignore permission or enumeration warnings
-    }
+    });
   };
 
-  gameDetectIntervalId = setInterval(checkOpenWindowTitles, 5000);
+  gameDetectIntervalId = setInterval(checkRunningGameProcesses, 15000);
 }
 
 // Click-Through In-Game Mini Voice Overlay / HUD Window
@@ -790,6 +789,11 @@ function createMainWindow() {
   });
 
   mainWindow.on('blur', () => {
+    try {
+      mainWindow?.webContents.setFrameRate(2);
+    } catch {
+      // yoksay
+    }
     mainWindow?.webContents.send('window:visibility-state', {
       isFocused: false,
       isMinimized: mainWindow?.isMinimized() ?? false,
@@ -797,6 +801,11 @@ function createMainWindow() {
   });
 
   mainWindow.on('focus', () => {
+    try {
+      mainWindow?.webContents.setFrameRate(60);
+    } catch {
+      // yoksay
+    }
     mainWindow?.webContents.send('window:visibility-state', {
       isFocused: true,
       isMinimized: false,
@@ -804,6 +813,11 @@ function createMainWindow() {
   });
 
   mainWindow.on('minimize', () => {
+    try {
+      mainWindow?.webContents.setFrameRate(1);
+    } catch {
+      // yoksay
+    }
     mainWindow?.webContents.send('window:visibility-state', {
       isFocused: false,
       isMinimized: true,
@@ -811,6 +825,11 @@ function createMainWindow() {
   });
 
   mainWindow.on('restore', () => {
+    try {
+      mainWindow?.webContents.setFrameRate(60);
+    } catch {
+      // yoksay
+    }
     mainWindow?.webContents.send('window:visibility-state', {
       isFocused: true,
       isMinimized: false,
@@ -820,6 +839,11 @@ function createMainWindow() {
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault();
+      try {
+        mainWindow?.webContents.setFrameRate(1);
+      } catch {
+        // yoksay
+      }
       mainWindow?.hide();
       mainWindow?.webContents.send('window:visibility-state', {
         isFocused: false,
@@ -860,14 +884,12 @@ app.whenReady().then(async () => {
   setupSystemTray();
   setupAutoUpdater();
   createMainWindow();
-  createOverlayWindow();
   registerGlobalHardwareShortcuts();
   startLightweightGameDetection();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createMainWindow();
-      createOverlayWindow();
     } else {
       mainWindow?.show();
       mainWindow?.focus();
@@ -910,6 +932,11 @@ ipcMain.on('window:maximize', () => {
 });
 
 ipcMain.on('window:close-to-tray', () => {
+  try {
+    mainWindow?.webContents.setFrameRate(1);
+  } catch {
+    // yoksay
+  }
   mainWindow?.hide();
   mainWindow?.webContents.send('window:visibility-state', {
     isFocused: false,
@@ -924,7 +951,7 @@ ipcMain.handle('overlay:toggle', (_event, forceState?: boolean) => {
 
 ipcMain.on('overlay:sync-state', (_event, payload: unknown) => {
   latestOverlayPayload = payload;
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
+  if (isOverlayVisible && overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('overlay:state-updated', payload);
   }
 });

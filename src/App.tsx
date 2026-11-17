@@ -21,6 +21,7 @@ export const App: React.FC = () => {
   const toastNotice = useSokakStore((s) => s.toastNotice);
   const clearToast = useSokakStore((s) => s.clearToast);
   const isGamingMode = useSokakStore((s) => s.isGamingMode);
+  const isOverlayActive = useSokakStore((s) => s.isOverlayActive);
   const isWindowFocused = useSokakStore((s) => s.isWindowFocused);
   const isWindowMinimized = useSokakStore((s) => s.isWindowMinimized);
   const activeVoiceChannelId = useSokakStore((s) => s.activeVoiceChannelId);
@@ -77,9 +78,9 @@ export const App: React.FC = () => {
     };
   }, [isStandaloneOverlay, authToken]);
 
-  // Aktif ses kanalı katılımcılarını Oyun İçi HUD (Overlay) penceresine senkronize et
+  // Aktif ses kanalı katılımcılarını sadece Oyun İçi HUD (Overlay) açıkken senkronize et (Arka planda sıfır IPC yükü)
   useEffect(() => {
-    if (isStandaloneOverlay) return;
+    if (isStandaloneOverlay || !isOverlayActive) return;
     if (!window.sokakDesktop?.syncOverlayState) return;
 
     const channelObj = channels.find((c) => c.id === activeVoiceChannelId);
@@ -103,7 +104,7 @@ export const App: React.FC = () => {
       channelName: channelObj?.name || null,
       occupants,
     });
-  }, [isStandaloneOverlay, activeVoiceChannelId, channels, users]);
+  }, [isStandaloneOverlay, isOverlayActive, activeVoiceChannelId, channels, users]);
 
   // Masaüstü kısayolları ve pencere görünürlük izleyicisi
   useEffect(() => {

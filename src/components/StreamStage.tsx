@@ -65,6 +65,7 @@ export const StreamStage: React.FC = () => {
   const users = useSokakStore((s) => s.users);
 
   const isStreamPausedForFps = useSokakStore((s) => s.isStreamPausedForFps);
+  const isGamingMode = useSokakStore((s) => s.isGamingMode);
   const isTheaterMode = useSokakStore((s) => s.isTheaterMode);
   const isSavingClip = useSokakStore((s) => s.isSavingClip);
   const isWindowFocused = useSokakStore((s) => s.isWindowFocused);
@@ -104,7 +105,12 @@ export const StreamStage: React.FC = () => {
     ? users.find((u) => u.socketId === activeRemoteSocketId)
     : null;
 
-  const shouldDetachVideo = isStreamPausedForFps || isWindowMinimized;
+  // Oyun oynarken pencere arka planda kaldığında (!isWindowFocused) yerel video çözümlemeyi otomatik durdur (0% GPU)
+  const shouldDetachVideo =
+    isStreamPausedForFps ||
+    isWindowMinimized ||
+    !isWindowFocused ||
+    isGamingMode;
   const hasMediaStage = Boolean(activeStream || isInCinemaRoom);
   const renderEsportCards = !hasMediaStage || showCardsInMediaRoom;
 

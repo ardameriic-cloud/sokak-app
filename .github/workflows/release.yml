@@ -96,15 +96,15 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.3' }}
-          name: 'SOKAK v1.1.3 — Masaüstü Kurulum Paketleri (Windows .exe & macOS .dmg)'
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.4' }}
+          name: 'SOKAK v1.1.4 — Masaüstü Kurulum Paketleri (Windows .exe & macOS .dmg)'
           body: |
-            ## ⚡ SOKAK v1.1.3 — Masaüstü İndirme Paketleri
+            ## ⚡ SOKAK v1.1.4 — Masaüstü İndirme Paketleri
             - **Windows 10/11 (64-bit):** `SOKAK-Setup.exe`
             - **macOS (Apple Silicon):** `SOKAK.dmg`
-            - **Yenilikler (v1.1.3):**
-              - 🎧 **128kbps Saf Mono Opus (`stereo=0`) & Temiz Ses Hattı:** WebRTC SDP müzakeresinde `maxaveragebitrate=128000; stereo=0; sprop-stereo=0; useinbandfec=1; usedtx=0; maxplaybackrate=48000` zorunlu kılındı; 128kbps bant genişliğinin tamamı tek bir yüksek kaliteli mono ses kanalına ayrılarak robotik/metalik ses bozulmaları tamamen giderildi.
-              - 🎙️ **Doğal Mikrofon Yakalama (`getUserMedia`):** `sampleRate: 48000`, `channelCount: 1`, `echoCancellation: true`, `noiseSuppression: false` (Ayarlar menüsünden açılıp kapatılabilir) ve `autoGainControl: false` ile tarayıcının agresif frekans ezmesi engellendi.
+            - **Yenilikler (v1.1.4):**
+              - 🚀 **Sıfır FPS Kaybı & Arka Plan Oyun Optimizasyonu:** Oyuna geçtiğiniz anda (`blur`/`minimize`) SOKAK pencere yenileme hızı otomatik olarak `1-2 FPS` uyku moduna düşürülür, sahnedeki `<video>` GPU çözümlemesi duraklatılır ve arka plan DWM/DXGI pencere taraması sıfır-GPU süreç kontrolü ile değiştirildi.
+              - 🎧 **128kbps Saf Mono Opus (`stereo=0`) & Temiz Ses Hattı:** Robotik/metalik sesi tamamen engelleyen `48kHz Mono 128kbps` Opus ses motoru.
               - 🖥️ **Ekran Paylaşımı + Mikrofon Koruması & 30 Sn Klip (`F8`):** Yayın sırasında kesintisiz mikrofon + masaüstü sesi mikseri ve `electron-updater` otomatik güncelleme.
           draft: false
           prerelease: false
