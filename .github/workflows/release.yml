@@ -96,16 +96,16 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.5' }}
-          name: 'SOKAK v1.1.5 — Masaüstü Kurulum Paketleri (Windows .exe & macOS .dmg)'
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.6' }}
+          name: 'SOKAK v1.1.6 — Masaüstü Kurulum Paketleri (Windows .exe & macOS .dmg)'
           body: |
-            ## ⚡ SOKAK v1.1.5 — Masaüstü İndirme Paketleri
+            ## ⚡ SOKAK v1.1.6 — Masaüstü İndirme Paketleri
             - **Windows 10/11 (64-bit):** `SOKAK-Setup.exe`
             - **macOS (Apple Silicon):** `SOKAK.dmg`
-            - **Yenilikler (v1.1.5):**
-              - 🚀 **Klip Tamponu Kaldırıldı & Sıfır FPS Kaybı (0% Arka Plan Video Kodlama):** Arka planda sürekli çalışan `MediaRecorder` klip tamponu tamamen kaldırıldı; oyuna geçtiğiniz anda (`blur`/`minimize`) SOKAK pencere yenileme hızı `1-2 FPS` uyku moduna düşer ve oyunlarda hiçbir FPS kaybı yaşanmaz.
-              - 🎧 **128kbps Saf Mono Opus (`stereo=0`) & Temiz Ses Hattı:** Robotik/metalik sesi tamamen engelleyen `48kHz Mono 128kbps` Opus ses motoru.
-              - 🖥️ **Ekran Paylaşımı + Mikrofon Koruması & Oto-Güncelleme:** Yayın sırasında kesintisiz mikrofon + masaüstü sesi mikseri ve `electron-updater` otomatik güncelleme.
+            - **Yenilikler (v1.1.6 — Performans ve Oyun İçi Deneyim Paketi):**
+              - ⚡ **Oyun Modu (`data-game-mode="true"` & Otomatik Tetikleme):** Valorant, CS2, LoL, EA FC vb. algılandığında otomatik devreye giren Düşük Gecikmeli Oyun Modu, arka planda `1-2 FPS` uyku modu ve `app.disableHardwareAcceleration()` kalıcı donanım hızlandırma ayarı.
+              - 🎚️ **Kişi Bazlı Ses (%0–%200 `GainNode`) & `AudioWorklet` Gürültü Filtresi:** Her kullanıcı için `%0–%200` Web Audio `GainNode` ses yükseltici, `AudioWorklet` tabanlı 85Hz gürültü filtresi + VAD eşiği ve `noiseSuppression` / `echoCancellation` / `autoGainControl` anahtarları.
+              - ⌨️ **Global Kısayollar (Keybinds) & Bas-Konuş (Push-to-Talk — 200ms Release Delay):** Özelleştirilebilir global kısayollar, 200ms bırakma gecikmeli Bas-Konuş ve oyun içi Web Audio sesli geri bildirim (Audio Cue).
           draft: false
           prerelease: false
           make_latest: true

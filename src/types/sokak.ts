@@ -43,10 +43,22 @@ export interface UpdaterStatusPayload {
   message?: string;
 }
 
+export interface KeybindConfig {
+  toggleMute: string;
+  toggleDeafen: string;
+  pushToTalk: string;
+}
+
+export type VoiceInputMode = 'vad' | 'ptt';
+
 export interface SokakDesktopAPI {
   getPlatformInfo: () => Promise<{
     platform: string;
     disableHardwareAcceleration: boolean;
+    autoGameMode?: boolean;
+    inputMode?: VoiceInputMode;
+    keybinds?: KeybindConfig;
+    userVolumes?: Record<string, UserVolumePreference>;
     isOverlayVisible?: boolean;
     appVersion?: string;
   }>;
@@ -68,6 +80,20 @@ export interface SokakDesktopAPI {
   relaunchApp: () => Promise<void>;
   onToggleMuteShortcut: (callback: () => void) => () => void;
   onToggleDeafenShortcut: (callback: () => void) => () => void;
+  onPushToTalkActivity?: (callback: () => void) => () => void;
+  updateKeybinds?: (payload: {
+    keybinds: KeybindConfig;
+    inputMode: VoiceInputMode;
+  }) => Promise<{
+    ok: boolean;
+    keybinds: KeybindConfig;
+    inputMode: VoiceInputMode;
+    registered: Record<string, boolean>;
+  }>;
+  saveUserVolumes?: (
+    userVolumes: Record<string, UserVolumePreference>
+  ) => void;
+  saveAutoGameMode?: (autoGameMode: boolean) => void;
   onSaveClipShortcut: (callback: () => void) => () => void;
   onWindowVisibilityState: (callback: (state: WindowVisibilityState) => void) => () => void;
   onGameDetected: (callback: (gameName: string | null) => void) => () => void;

@@ -93,6 +93,15 @@ class SoundFXEngine {
     }
   }
 
+  public playPttCue(opened: boolean) {
+    // Bas-Konuş (Push-to-Talk) oyun içi düşük sesli taktiksel tık/bip geri bildirimi
+    if (opened) {
+      this.playTone(620, 820, 0.038, 'sine', 0.045, 0);
+    } else {
+      this.playTone(540, 380, 0.038, 'sine', 0.04, 0);
+    }
+  }
+
   public playStreamStart() {
     // Yayın Başlangıcı: 3 Notalı Taktiksel Yayın Tonu
     this.playTone(440, 554.37, 0.08, 'sine', 0.065, 0);

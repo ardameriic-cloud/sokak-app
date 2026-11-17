@@ -6,6 +6,7 @@ import {
   ChatMessage,
   ChatReaction,
   getRankMeta,
+  KeybindConfig,
   MemberEntry,
   RankRole,
   ReadyCheckState,
@@ -17,6 +18,7 @@ import {
   UpdaterStatusPayload,
   UserPresence,
   UserVolumePreference,
+  VoiceInputMode,
   WatchTogetherState,
 } from '../types/sokak';
 
@@ -26,13 +28,24 @@ const DEFAULT_SERVER_URL =
     ?.VITE_SERVER_URL || ''
   ).trim() || 'https://sokak-server.onrender.com';
 
+export const DEFAULT_KEYBINDS: KeybindConfig = {
+  toggleMute: 'CommandOrControl+Shift+M',
+  toggleDeafen: 'CommandOrControl+Shift+D',
+  pushToTalk: 'CommandOrControl+Shift+Space',
+};
+
 const STORAGE_KEYS = {
   CONFIG_VERSION: 'sokak_config_version',
   AUTH_TOKEN: 'sokak_auth_token',
   SERVER_URL: 'sokak_server_url',
   NOISE_GATE_DB: 'sokak_noise_gate_db',
   BROWSER_NOISE_SUPPRESSION: 'sokak_browser_noise_suppression',
+  ECHO_CANCELLATION: 'sokak_echo_cancellation',
+  AUTO_GAIN_CONTROL: 'sokak_auto_gain_control',
+  INPUT_MODE: 'sokak_input_mode',
+  KEYBINDS: 'sokak_keybinds',
   GAMING_MODE: 'sokak_gaming_mode',
+  AUTO_GAME_MODE: 'sokak_auto_game_mode',
   USER_VOLUMES: 'sokak_user_volumes',
   MEMBER_LIST_OPEN: 'sokak_member_list_open',
   THEME_ACCENT: 'sokak_theme_accent',
@@ -89,6 +102,21 @@ function getInitialVolumes(): Record<string, UserVolumePreference> {
   return {};
 }
 
+function getInitialKeybinds(): KeybindConfig {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.KEYBINDS);
+    if (raw) {
+      return {
+        ...DEFAULT_KEYBINDS,
+        ...JSON.parse(raw),
+      };
+    }
+  } catch {
+    // yoksay
+  }
+  return { ...DEFAULT_KEYBINDS };
+}
+
 export interface SokakState {
   // Hesap & Oturum & RBAC Rütbe
   authStatus: AuthStatus;
@@ -129,12 +157,17 @@ export interface SokakState {
   watchTogether: WatchTogetherState;
   activeReadyCheck: ReadyCheckState | null;
 
-  // Ses motoru
+  // Ses motoru & Kısayollar & Bas-Konuş (PTT)
   isMuted: boolean;
   isDeafened: boolean;
   isSpeaking: boolean;
   noiseGateThresholdDb: number;
   browserNoiseSuppression: boolean;
+  echoCancellation: boolean;
+  autoGainControl: boolean;
+  inputMode: VoiceInputMode;
+  isPttActive: boolean;
+  keybinds: KeybindConfig;
   currentInputLevelDb: number;
   userVolumes: Record<string, UserVolumePreference>;
   selectedAudioInputDeviceId: string;
@@ -152,7 +185,10 @@ export interface SokakState {
 
   // Telemetri & performans & Oyun İçi Arayüz (Overlay) & Klip Modu & Oto-Güncelleyici
   telemetry: TelemetryStats;
+  gameMode: boolean;
   isGamingMode: boolean;
+  autoGameMode: boolean;
+  gameModeAutoActivated: boolean;
   isOverlayActive: boolean;
   isReplayBufferActive: boolean;
   replayBufferSeconds: number;
@@ -207,6 +243,11 @@ export interface SokakState {
   setSpeaking: (isSpeaking: boolean) => void;
   setNoiseGateThresholdDb: (db: number) => void;
   setBrowserNoiseSuppression: (enabled: boolean) => void;
+  setEchoCancellation: (enabled: boolean) => void;
+  setAutoGainControl: (enabled: boolean) => void;
+  setInputMode: (mode: VoiceInputMode) => void;
+  setPttActive: (active: boolean) => void;
+  setKeybinds: (binds: Partial<KeybindConfig>) => void;
   setCurrentInputLevelDb: (db: number) => void;
   setUserVolume: (targetUserId: string, volume: number) => void;
   toggleUserLocalMute: (targetUserId: string) => void;
@@ -222,7 +263,8 @@ export interface SokakState {
   setSettingsModalOpen: (open: boolean) => void;
 
   setTelemetry: (stats: Partial<TelemetryStats>) => void;
-  setGamingMode: (enabled: boolean) => void;
+  setGamingMode: (enabled: boolean, autoTriggered?: boolean) => void;
+  setAutoGameMode: (enabled: boolean) => void;
   setOverlayActive: (active: boolean) => void;
   setReplayBufferState: (active: boolean, seconds?: number) => void;
   setSavingClip: (saving: boolean) => void;
@@ -230,7 +272,17 @@ export interface SokakState {
   setUpdaterStatus: (status: UpdaterStatusPayload) => void;
   setDisableHwAccelOnRestart: (disabled: boolean) => void;
   setWindowVisibility: (isFocused: boolean, isMinimized: boolean) => void;
-  setPlatformInfo: (platform: string, disableHwAccel: boolean, appVersion?: string) => void;
+  setPlatformInfo: (
+    platform: string,
+    disableHwAccel: boolean,
+    appVersion?: string,
+    extras?: {
+      autoGameMode?: boolean;
+      inputMode?: VoiceInputMode;
+      keybinds?: KeybindConfig;
+      userVolumes?: Record<string, UserVolumePreference>;
+    }
+  ) => void;
 }
 
 const DEFAULT_CHANNELS: ChannelDef[] = [
@@ -302,6 +354,14 @@ export const useSokakStore = create<SokakState>((set, get) => ({
   noiseGateThresholdDb: Number(localStorage.getItem(STORAGE_KEYS.NOISE_GATE_DB) || -62),
   browserNoiseSuppression:
     localStorage.getItem(STORAGE_KEYS.BROWSER_NOISE_SUPPRESSION) === 'true',
+  echoCancellation:
+    localStorage.getItem(STORAGE_KEYS.ECHO_CANCELLATION) !== 'false',
+  autoGainControl:
+    localStorage.getItem(STORAGE_KEYS.AUTO_GAIN_CONTROL) === 'true',
+  inputMode:
+    localStorage.getItem(STORAGE_KEYS.INPUT_MODE) === 'ptt' ? 'ptt' : 'vad',
+  isPttActive: false,
+  keybinds: getInitialKeybinds(),
   currentInputLevelDb: -85,
   userVolumes: getInitialVolumes(),
   selectedAudioInputDeviceId: 'default',
@@ -322,7 +382,10 @@ export const useSokakStore = create<SokakState>((set, get) => ({
     packetLossPercent: 0.0,
     codec: 'Opus 48kHz Mono 128kbps',
   },
+  gameMode: localStorage.getItem(STORAGE_KEYS.GAMING_MODE) === 'true',
   isGamingMode: localStorage.getItem(STORAGE_KEYS.GAMING_MODE) === 'true',
+  autoGameMode: localStorage.getItem(STORAGE_KEYS.AUTO_GAME_MODE) !== 'false',
+  gameModeAutoActivated: false,
   isOverlayActive: false,
   isReplayBufferActive: false,
   replayBufferSeconds: 0,
@@ -330,9 +393,9 @@ export const useSokakStore = create<SokakState>((set, get) => ({
   localClipObjectUrls: {},
   updaterStatus: {
     state: 'idle',
-    version: '1.1.5',
+    version: '1.1.6',
   },
-  appVersion: '1.1.5',
+  appVersion: '1.1.6',
   disableHwAccelOnRestart: false,
   isWindowFocused: true,
   isWindowMinimized: false,
@@ -528,6 +591,41 @@ export const useSokakStore = create<SokakState>((set, get) => ({
     set({ browserNoiseSuppression: enabled });
   },
 
+  setEchoCancellation: (enabled) => {
+    localStorage.setItem(STORAGE_KEYS.ECHO_CANCELLATION, String(enabled));
+    set({ echoCancellation: enabled });
+  },
+
+  setAutoGainControl: (enabled) => {
+    localStorage.setItem(STORAGE_KEYS.AUTO_GAIN_CONTROL, String(enabled));
+    set({ autoGainControl: enabled });
+  },
+
+  setInputMode: (mode) => {
+    localStorage.setItem(STORAGE_KEYS.INPUT_MODE, mode);
+    set({ inputMode: mode, isPttActive: false });
+    const binds = get().keybinds;
+    window.sokakDesktop?.updateKeybinds?.({
+      keybinds: binds,
+      inputMode: mode,
+    });
+  },
+
+  setPttActive: (isPttActive) => set({ isPttActive }),
+
+  setKeybinds: (partial) => {
+    const merged: KeybindConfig = {
+      ...get().keybinds,
+      ...partial,
+    };
+    localStorage.setItem(STORAGE_KEYS.KEYBINDS, JSON.stringify(merged));
+    set({ keybinds: merged });
+    window.sokakDesktop?.updateKeybinds?.({
+      keybinds: merged,
+      inputMode: get().inputMode,
+    });
+  },
+
   setCurrentInputLevelDb: (db) => set({ currentInputLevelDb: db }),
 
   setUserVolume: (targetUserId, volume) => {
@@ -535,6 +633,7 @@ export const useSokakStore = create<SokakState>((set, get) => ({
     const current = get().userVolumes[targetUserId] || { volume: 100, localMuted: false };
     const updated = { ...get().userVolumes, [targetUserId]: { ...current, volume: clamped } };
     localStorage.setItem(STORAGE_KEYS.USER_VOLUMES, JSON.stringify(updated));
+    window.sokakDesktop?.saveUserVolumes?.(updated);
     set({ userVolumes: updated });
   },
 
@@ -545,6 +644,7 @@ export const useSokakStore = create<SokakState>((set, get) => ({
       [targetUserId]: { ...current, localMuted: !current.localMuted },
     };
     localStorage.setItem(STORAGE_KEYS.USER_VOLUMES, JSON.stringify(updated));
+    window.sokakDesktop?.saveUserVolumes?.(updated);
     set({ userVolumes: updated });
   },
 
@@ -578,9 +678,21 @@ export const useSokakStore = create<SokakState>((set, get) => ({
 
   setTelemetry: (stats) => set((state) => ({ telemetry: { ...state.telemetry, ...stats } })),
 
-  setGamingMode: (enabled) => {
-    localStorage.setItem(STORAGE_KEYS.GAMING_MODE, String(enabled));
-    set({ isGamingMode: enabled });
+  setGamingMode: (enabled, autoTriggered = false) => {
+    if (!autoTriggered) {
+      localStorage.setItem(STORAGE_KEYS.GAMING_MODE, String(enabled));
+    }
+    set({
+      gameMode: enabled,
+      isGamingMode: enabled,
+      gameModeAutoActivated: autoTriggered ? enabled : false,
+    });
+  },
+
+  setAutoGameMode: (enabled) => {
+    localStorage.setItem(STORAGE_KEYS.AUTO_GAME_MODE, String(enabled));
+    window.sokakDesktop?.saveAutoGameMode?.(enabled);
+    set({ autoGameMode: enabled });
   },
 
   setOverlayActive: (isOverlayActive) => set({ isOverlayActive }),
@@ -609,12 +721,26 @@ export const useSokakStore = create<SokakState>((set, get) => ({
   setWindowVisibility: (isFocused, isMinimized) =>
     set({ isWindowFocused: isFocused, isWindowMinimized: isMinimized }),
 
-  setPlatformInfo: (platform, disableHwAccel, appVersion) =>
-    set((state) => ({
-      platform,
-      disableHwAccelOnRestart: disableHwAccel,
-      ...(appVersion ? { appVersion } : {}),
-    })),
+  setPlatformInfo: (platform, disableHwAccel, appVersion, extras) =>
+    set((state) => {
+      const mergedVolumes =
+        extras?.userVolumes && Object.keys(extras.userVolumes).length > 0
+          ? { ...extras.userVolumes, ...state.userVolumes }
+          : state.userVolumes;
+      return {
+        platform,
+        disableHwAccelOnRestart: disableHwAccel,
+        ...(appVersion ? { appVersion } : {}),
+        ...(typeof extras?.autoGameMode === 'boolean'
+          ? { autoGameMode: extras.autoGameMode }
+          : {}),
+        ...(extras?.inputMode ? { inputMode: extras.inputMode } : {}),
+        ...(extras?.keybinds
+          ? { keybinds: { ...DEFAULT_KEYBINDS, ...extras.keybinds } }
+          : {}),
+        userVolumes: mergedVolumes,
+      };
+    }),
 }));
 
 export function isUiFrozenForGame(state: SokakState): boolean {

@@ -42,10 +42,20 @@ export interface UpdaterStatusPayload {
   message?: string;
 }
 
+export interface KeybindConfig {
+  toggleMute: string;
+  toggleDeafen: string;
+  pushToTalk: string;
+}
+
 const sokakDesktopAPI = {
   getPlatformInfo: (): Promise<{
     platform: string;
     disableHardwareAcceleration: boolean;
+    autoGameMode?: boolean;
+    inputMode?: 'vad' | 'ptt';
+    keybinds?: KeybindConfig;
+    userVolumes?: Record<string, { volume: number; localMuted: boolean }>;
     isOverlayVisible?: boolean;
     appVersion?: string;
   }> => ipcRenderer.invoke('window:get-platform'),
@@ -108,6 +118,29 @@ const sokakDesktopAPI = {
     ipcRenderer.on('shortcut:toggle-deafen', handler);
     return () => ipcRenderer.removeListener('shortcut:toggle-deafen', handler);
   },
+
+  onPushToTalkActivity: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('shortcut:ptt-activity', handler);
+    return () => ipcRenderer.removeListener('shortcut:ptt-activity', handler);
+  },
+
+  updateKeybinds: (payload: {
+    keybinds: KeybindConfig;
+    inputMode: 'vad' | 'ptt';
+  }): Promise<{
+    ok: boolean;
+    keybinds: KeybindConfig;
+    inputMode: 'vad' | 'ptt';
+    registered: Record<string, boolean>;
+  }> => ipcRenderer.invoke('keybinds:update', payload),
+
+  saveUserVolumes: (
+    userVolumes: Record<string, { volume: number; localMuted: boolean }>
+  ) => ipcRenderer.send('settings:save-volumes', userVolumes),
+
+  saveAutoGameMode: (autoGameMode: boolean) =>
+    ipcRenderer.send('settings:save-auto-game-mode', autoGameMode),
 
   onSaveClipShortcut: (callback: () => void) => {
     const handler = () => callback();

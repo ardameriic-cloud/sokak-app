@@ -10,12 +10,53 @@ import {
   RotateCcw,
   LogOut,
   ImagePlus,
+  Keyboard,
+  AlertTriangle,
 } from 'lucide-react';
-import { useSokakStore } from '../store/useSokakStore';
+import { useSokakStore, DEFAULT_KEYBINDS } from '../store/useSokakStore';
 import { rtcEngine } from '../services/rtcEngine';
 import { soundFX } from '../services/soundFX';
 import { authApi, resizeAvatarImage } from '../services/authApi';
+import { KeybindConfig } from '../types/sokak';
 import { Avatar } from './Avatar';
+
+function formatAcceleratorLabel(acc: string): string {
+  return String(acc || '')
+    .replace(/CommandOrControl/gi, 'Ctrl / Cmd')
+    .replace(/\+/g, ' + ');
+}
+
+function isBareSingleKey(acc: string): boolean {
+  const parts = String(acc || '')
+    .split('+')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length !== 1) return false;
+  const key = parts[0].toUpperCase();
+  if (/^F([1-9]|1[0-2])$/.test(key)) return false;
+  return true;
+}
+
+function buildAcceleratorFromKeyboardEvent(e: KeyboardEvent): string | null {
+  const modifierNames = new Set(['Control', 'Shift', 'Alt', 'Meta']);
+  if (modifierNames.has(e.key)) return null;
+
+  const mods: string[] = [];
+  if (e.ctrlKey || e.metaKey) mods.push('CommandOrControl');
+  if (e.altKey) mods.push('Alt');
+  if (e.shiftKey) mods.push('Shift');
+
+  let mainKey = e.key;
+  if (e.code === 'Space' || e.key === ' ') {
+    mainKey = 'Space';
+  } else if (mainKey.length === 1) {
+    mainKey = mainKey.toUpperCase();
+  } else if (/^f\d+$/i.test(mainKey)) {
+    mainKey = mainKey.toUpperCase();
+  }
+
+  return [...mods, mainKey].join('+');
+}
 
 const AVATAR_COLORS = [
   '#10B981',
@@ -44,11 +85,17 @@ export const SettingsModal: React.FC = () => {
   const browserNoiseSuppression = useSokakStore(
     (s) => s.browserNoiseSuppression
   );
+  const echoCancellation = useSokakStore((s) => s.echoCancellation);
+  const autoGainControl = useSokakStore((s) => s.autoGainControl);
+  const inputMode = useSokakStore((s) => s.inputMode);
+  const keybinds = useSokakStore((s) => s.keybinds);
+  const soundEffectsEnabled = useSokakStore((s) => s.soundEffectsEnabled);
   const currentInputLevelDb = useSokakStore((s) => s.currentInputLevelDb);
   const selectedAudioInputDeviceId = useSokakStore(
     (s) => s.selectedAudioInputDeviceId
   );
   const isGamingMode = useSokakStore((s) => s.isGamingMode);
+  const autoGameMode = useSokakStore((s) => s.autoGameMode);
   const disableHwAccelOnRestart = useSokakStore(
     (s) => s.disableHwAccelOnRestart
   );
@@ -61,10 +108,18 @@ export const SettingsModal: React.FC = () => {
   const setBrowserNoiseSuppression = useSokakStore(
     (s) => s.setBrowserNoiseSuppression
   );
+  const setEchoCancellation = useSokakStore((s) => s.setEchoCancellation);
+  const setAutoGainControl = useSokakStore((s) => s.setAutoGainControl);
+  const setInputMode = useSokakStore((s) => s.setInputMode);
+  const setKeybinds = useSokakStore((s) => s.setKeybinds);
+  const setSoundEffectsEnabled = useSokakStore(
+    (s) => s.setSoundEffectsEnabled
+  );
   const setSelectedAudioInputDeviceId = useSokakStore(
     (s) => s.setSelectedAudioInputDeviceId
   );
   const setGamingMode = useSokakStore((s) => s.setGamingMode);
+  const setAutoGameMode = useSokakStore((s) => s.setAutoGameMode);
   const setDisableHwAccelOnRestart = useSokakStore(
     (s) => s.setDisableHwAccelOnRestart
   );
@@ -75,15 +130,23 @@ export const SettingsModal: React.FC = () => {
   const [draftServerUrl, setDraftServerUrl] = useState(serverUrl);
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
   const [savedNotice, setSavedNotice] = useState(false);
+  const [recordingKeyField, setRecordingKeyField] = useState<
+    keyof KeybindConfig | null
+  >(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setRecordingKeyField(null);
+      rtcEngine.stopSettingsMicPreview();
+      return;
+    }
     setDraftTag(statusTag);
     setDraftColor(avatarColor);
     setDraftImage(avatarImage);
     setDraftServerUrl(serverUrl);
+    rtcEngine.startSettingsMicPreview().catch(() => {});
 
     if (navigator.mediaDevices?.enumerateDevices) {
       navigator.mediaDevices
@@ -93,7 +156,34 @@ export const SettingsModal: React.FC = () => {
         })
         .catch(() => {});
     }
+
+    return () => {
+      rtcEngine.stopSettingsMicPreview();
+    };
   }, [isOpen, statusTag, avatarColor, avatarImage, serverUrl]);
+
+  useEffect(() => {
+    if (!recordingKeyField) return;
+
+    const handleCaptureKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === 'Escape') {
+        setRecordingKeyField(null);
+        return;
+      }
+
+      const acc = buildAcceleratorFromKeyboardEvent(e);
+      if (!acc) return;
+
+      setKeybinds({ [recordingKeyField]: acc });
+      setRecordingKeyField(null);
+    };
+
+    window.addEventListener('keydown', handleCaptureKey, true);
+    return () => window.removeEventListener('keydown', handleCaptureKey, true);
+  }, [recordingKeyField, setKeybinds]);
 
   if (!isOpen) return null;
 
@@ -344,69 +434,154 @@ export const SettingsModal: React.FC = () => {
             </div>
           </form>
 
-          {/* BÖLÜM 2: STÜDYO SES MOTORU & GÜRÜLTÜ FİLTRESİ */}
+          {/* BÖLÜM 2: SES & KISAYOLLAR (Mikrofon İşleme, VAD, AudioWorklet & Bas-Konuş) */}
           <div className="p-4 rounded-md bg-[#090A0F] border border-white/[0.06] space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-bold text-zinc-100 uppercase tracking-wider">
                 <Mic className="w-3.5 h-3.5 text-[#10B981]" />
-                <span>Stüdyo Ses Motoru & Mekanik Klavye Gürültü Filtresi</span>
+                <span>Ses & Kısayollar (Mikrofon İşleme, VAD & Bas-Konuş)</span>
               </div>
               <span className="text-[10px] font-mono text-[#10B981]">
-                Opus 128kbps Mono (stereo=0) + FEC
+                Opus 128kbps Mono (stereo=0) + AudioWorklet
               </span>
             </div>
 
-            <div>
-              <label className="block text-[11px] text-zinc-400 mb-1">
-                Mikrofon Giriş Aygıtı
-              </label>
-              <select
-                value={selectedAudioInputDeviceId}
-                onChange={(e) => {
-                  setSelectedAudioInputDeviceId(e.target.value);
-                  rtcEngine.reinitializeMicPipeline();
-                }}
-                className="w-full px-3 py-1.5 rounded bg-[#151821] border border-white/[0.08] text-xs text-zinc-100 focus:outline-none"
-              >
-                <option value="default">Sistem Varsayılan Mikrofonu</option>
-                {audioInputs.map((dev) => (
-                  <option key={dev.deviceId} value={dev.deviceId}>
-                    {dev.label || `Mikrofon (${dev.deviceId.slice(0, 6)})`}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] text-zinc-400 mb-1">
+                  Mikrofon Giriş Aygıtı
+                </label>
+                <select
+                  value={selectedAudioInputDeviceId}
+                  onChange={(e) => {
+                    setSelectedAudioInputDeviceId(e.target.value);
+                    rtcEngine.reinitializeMicPipeline();
+                  }}
+                  className="w-full px-3 py-1.5 rounded bg-[#151821] border border-white/[0.08] text-xs text-zinc-100 focus:outline-none"
+                >
+                  <option value="default">Sistem Varsayılan Mikrofonu</option>
+                  {audioInputs.map((dev) => (
+                    <option key={dev.deviceId} value={dev.deviceId}>
+                      {dev.label || `Mikrofon (${dev.deviceId.slice(0, 6)})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            {/* Tarayıcı Gürültü Engelleme Anahtarı (Kulaklık kullanıcıları için robotik sesi önlemek üzere varsayılan KAPALI) */}
-            <div className="flex items-center justify-between py-2 px-3 rounded bg-[#151821]/70 border border-white/[0.06]">
-              <div className="pr-3">
-                <div className="text-xs font-medium text-zinc-200">
-                  Tarayıcı Gürültü Engelleme (Noise Suppression)
-                </div>
-                <div className="text-[11px] text-zinc-400">
-                  Kulaklık mikrofonlarında robotik/metalik ses bozulmasını önlemek için varsayılan olarak kapalıdır (48kHz Saf Mono + Eko Engelleme aktif).
+              <div>
+                <label className="block text-[11px] text-zinc-400 mb-1">
+                  Mikrofon İletim Modu (VAD / Bas-Konuş)
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setInputMode('vad')}
+                    className={`px-2.5 py-1.5 rounded text-xs font-mono font-bold border ${
+                      inputMode === 'vad'
+                        ? 'bg-[#10B981]/20 border-[#10B981] text-[#10B981]'
+                        : 'bg-[#151821] border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    🎙️ Ses Etkinliği (VAD)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInputMode('ptt')}
+                    className={`px-2.5 py-1.5 rounded text-xs font-mono font-bold border ${
+                      inputMode === 'ptt'
+                        ? 'bg-[#5865F2]/25 border-[#5865F2] text-zinc-100'
+                        : 'bg-[#151821] border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    ⌨️ Bas-Konuş (PTT)
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setBrowserNoiseSuppression(!browserNoiseSuppression);
-                  rtcEngine.reinitializeMicPipeline();
-                }}
-                className={`px-3 py-1 rounded text-xs font-mono font-bold border shrink-0 ${
-                  browserNoiseSuppression
-                    ? 'bg-[#5865F2]/20 border-[#5865F2] text-[#5865F2]'
-                    : 'bg-[#10B981]/15 border-[#10B981]/50 text-[#10B981]'
-                }`}
-              >
-                {browserNoiseSuppression ? 'AÇIK' : 'SAF SES (KAPALI)'}
-              </button>
             </div>
 
-            <div className="space-y-2">
+            {/* WebRTC Mikrofon İşleme Anahtarları (noiseSuppression, echoCancellation, autoGainControl) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="p-2.5 rounded bg-[#151821]/70 border border-white/[0.06] flex flex-col justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-zinc-200">
+                    Gürültü Engelleme
+                  </div>
+                  <div className="text-[10px] text-zinc-400">
+                    Tarayıcı `noiseSuppression` (Kulaklıkta Saf Ses için kapalı önerilir)
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBrowserNoiseSuppression(!browserNoiseSuppression);
+                    rtcEngine.reinitializeMicPipeline();
+                  }}
+                  className={`w-full py-1 rounded text-[10px] font-mono font-bold border ${
+                    browserNoiseSuppression
+                      ? 'bg-[#5865F2]/20 border-[#5865F2] text-[#5865F2]'
+                      : 'bg-[#10B981]/15 border-[#10B981]/50 text-[#10B981]'
+                  }`}
+                >
+                  {browserNoiseSuppression ? 'AÇIK' : 'SAF SES (KAPALI)'}
+                </button>
+              </div>
+
+              <div className="p-2.5 rounded bg-[#151821]/70 border border-white/[0.06] flex flex-col justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-zinc-200">
+                    Yankı Engelleme (AEC)
+                  </div>
+                  <div className="text-[10px] text-zinc-400">
+                    `echoCancellation`: Hoparlör / kulaklık yankısını keser
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEchoCancellation(!echoCancellation);
+                    rtcEngine.reinitializeMicPipeline();
+                  }}
+                  className={`w-full py-1 rounded text-[10px] font-mono font-bold border ${
+                    echoCancellation
+                      ? 'bg-[#10B981]/20 border-[#10B981] text-[#10B981]'
+                      : 'bg-[#090A0F] border-white/[0.08] text-zinc-400'
+                  }`}
+                >
+                  {echoCancellation ? 'AKTİF' : 'KAPALI'}
+                </button>
+              </div>
+
+              <div className="p-2.5 rounded bg-[#151821]/70 border border-white/[0.06] flex flex-col justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-zinc-200">
+                    Otomatik Kazanç (AGC)
+                  </div>
+                  <div className="text-[10px] text-zinc-400">
+                    `autoGainControl`: Mikrofon sesini otomatik dengeler
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAutoGainControl(!autoGainControl);
+                    rtcEngine.reinitializeMicPipeline();
+                  }}
+                  className={`w-full py-1 rounded text-[10px] font-mono font-bold border ${
+                    autoGainControl
+                      ? 'bg-[#5865F2]/20 border-[#5865F2] text-[#5865F2]'
+                      : 'bg-[#090A0F] border-white/[0.08] text-zinc-400'
+                  }`}
+                >
+                  {autoGainControl ? 'AÇIK' : 'KAPALI (SABİT)'}
+                </button>
+              </div>
+            </div>
+
+            {/* Mikrofon Hassasiyet Eşiği (VAD Threshold) & Canlı Giriş Seviyesi Barı */}
+            <div className="space-y-2 pt-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-zinc-300 font-medium">
-                  Gürültü Kapısı Eşik Değeri (Mekanik Klavye / Fare Sesi Engelleyici)
+                  Mikrofon Hassasiyet Eşiği (VAD Threshold — AudioWorklet Gürültü Kapısı)
                 </span>
                 <span className="font-mono font-bold tabular-nums text-[#10B981]">
                   {noiseGateThresholdDb} dB
@@ -433,61 +608,185 @@ export const SettingsModal: React.FC = () => {
                 <div
                   className="absolute top-0 bottom-0 w-0.5 bg-rose-500"
                   style={{ left: `${thresholdPercent}%` }}
-                  title={`Eşik: ${noiseGateThresholdDb} dB`}
+                  title={`VAD Eşik: ${noiseGateThresholdDb} dB`}
                 />
               </div>
 
               <div className="flex justify-between text-[10px] font-mono tabular-nums text-zinc-500">
                 <span>-80 dB (Hassas)</span>
-                <span>Anlık Giriş: {currentInputLevelDb} dB</span>
+                <span>Canlı Giriş Seviyesi: {currentInputLevelDb} dB</span>
                 <span>-15 dB (Sıkı Filtre)</span>
               </div>
             </div>
 
-            <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between">
-              <span className="text-[11px] text-zinc-400 flex items-center gap-1.5">
+            {/* Global Kısayollar (Keybinds) & Bas-Konuş (200ms Release Delay) */}
+            <div className="pt-3 border-t border-white/[0.06] space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-200 uppercase tracking-wider">
+                  <Keyboard className="w-3.5 h-3.5 text-[#5865F2]" />
+                  <span>Global Kısayollar (Keybinds) & Bas-Konuş</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setKeybinds(DEFAULT_KEYBINDS)}
+                  className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#151821] hover:bg-[#1C202C] border border-white/[0.08] text-zinc-400 hover:text-zinc-200"
+                >
+                  Varsayılana Sıfırla
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                {(
+                  [
+                    {
+                      field: 'toggleMute' as const,
+                      title: '1. Mikrofonu Aç/Kapat (Toggle Mute)',
+                      desc: 'Oyun içindeyken Alt+Tab yapmadan mikrofonu susturur / açar',
+                    },
+                    {
+                      field: 'toggleDeafen' as const,
+                      title: '2. Sesi ve Mikrofonu Kapat (Toggle Deafen)',
+                      desc: 'Tüm gelen ve giden sesleri tek tuşla kapatır / açar',
+                    },
+                    {
+                      field: 'pushToTalk' as const,
+                      title: '3. Bas-Konuş (Push-to-Talk — 200ms Bırakma Gecikmeli)',
+                      desc: 'Yalnızca basılı tutarken mikrofonu açar, bırakıldığında 200ms sonra kapatır',
+                    },
+                  ] as const
+                ).map((item) => {
+                  const isRec = recordingKeyField === item.field;
+                  const currentBind = keybinds[item.field];
+                  return (
+                    <div
+                      key={item.field}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded bg-[#151821] border border-white/[0.06]"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-zinc-200">
+                          {item.title}
+                        </div>
+                        <div className="text-[10px] text-zinc-400">
+                          {item.desc}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRecordingKeyField(isRec ? null : item.field)
+                        }
+                        className={`px-3 py-1 rounded text-xs font-mono font-bold border shrink-0 ${
+                          isRec
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                            : 'bg-[#090A0F] hover:bg-[#1C202C] border-white/[0.1] text-[#10B981]'
+                        }`}
+                      >
+                        {isRec
+                          ? 'Tuşa Basın (ESC İptal)...'
+                          : formatAcceleratorLabel(currentBind)}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {(isBareSingleKey(keybinds.toggleMute) ||
+                isBareSingleKey(keybinds.toggleDeafen) ||
+                isBareSingleKey(keybinds.pushToTalk)) && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>
+                    Oyun içi klavye kontrolleriyle (WASD vb.) çakışmayı ve input gecikmesini önlemek için tek harf yerine <strong>Ctrl / Shift / Alt</strong> kombinasyonu veya <strong>F-tuşu</strong> kullanmanız önerilir.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Sesli Geri Bildirim (Audio Cue) Anahtarı & Test Butonları */}
+            <div className="pt-2 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
                 <Volume2 className="w-3.5 h-3.5 text-[#5865F2]" />
-                <span>Sentezlenmiş Bildirim Sesleri:</span>
-              </span>
+                <div>
+                  <div className="text-xs font-medium text-zinc-200">
+                    Oyun İçi Sesli Geri Bildirim (Audio Cue)
+                  </div>
+                  <div className="text-[10px] text-zinc-400">
+                    Alt+Tab yapmadan Mute/Deafen/Bas-Konuş durumunu hafif bip/tık sesiyle bildirir
+                  </div>
+                </div>
+              </div>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => soundFX.playUserJoin()}
-                  className="px-2 py-1 rounded bg-[#151821] hover:bg-[#1C202C] border border-white/[0.06] text-[10px] text-zinc-300"
+                  onClick={() => setSoundEffectsEnabled(!soundEffectsEnabled)}
+                  className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold border ${
+                    soundEffectsEnabled
+                      ? 'bg-[#10B981]/20 border-[#10B981] text-[#10B981]'
+                      : 'bg-[#151821] border-white/[0.08] text-zinc-400'
+                  }`}
                 >
-                  Katılma Sesi
+                  {soundEffectsEnabled ? 'SESLİ İPUCU: AÇIK' : 'KAPALI'}
                 </button>
                 <button
                   type="button"
-                  onClick={() => soundFX.playStreamStart()}
+                  onClick={() => soundFX.playMute(true)}
                   className="px-2 py-1 rounded bg-[#151821] hover:bg-[#1C202C] border border-white/[0.06] text-[10px] text-zinc-300"
                 >
-                  Yayın Sesi
+                  Mute Sesi Test
+                </button>
+                <button
+                  type="button"
+                  onClick={() => soundFX.playPttCue(true)}
+                  className="px-2 py-1 rounded bg-[#151821] hover:bg-[#1C202C] border border-white/[0.06] text-[10px] text-zinc-300"
+                >
+                  PTT Sesi Test
                 </button>
               </div>
             </div>
           </div>
 
-          {/* BÖLÜM 3: PERFORMANS & DONANIM İVMESİ */}
+          {/* BÖLÜM 3: PERFORMANS & OYUN MODU (Low-Latency & Minimal Render) */}
           <div className="p-4 rounded-md bg-[#090A0F] border border-white/[0.06] space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold text-zinc-100 uppercase tracking-wider">
               <Zap className="w-3.5 h-3.5 text-[#10B981]" />
-              <span>Sıfır FPS Kaybı & Ekran Kartı (GPU) Koruması</span>
+              <span>Performans, Oyun Modu & Donanım Hızlandırma</span>
             </div>
 
             <div className="flex items-center justify-between py-1">
               <div>
                 <div className="text-xs font-medium text-zinc-200">
-                  ⚡ Oyun Modu (Tüm Arayüz Geçişlerini Dondur)
+                  🎮 Aktif Oyun Algılandığında Oyun Modunu Otomatik Aç
                 </div>
                 <div className="text-[11px] text-zinc-400">
-                  Aktif edildiğinde arayüz animasyonlarını ve ses göstergelerini tamamen kapatır.
+                  Valorant, CS2, League of Legends, EA FC vb. algılandığında `data-game-mode="true"` otomatik devreye girer.
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setGamingMode(!isGamingMode)}
-                className={`px-3 py-1 rounded text-xs font-mono font-bold border ${
+                onClick={() => setAutoGameMode(!autoGameMode)}
+                className={`px-3 py-1 rounded text-xs font-mono font-bold border shrink-0 ${
+                  autoGameMode
+                    ? 'bg-[#10B981]/20 border-[#10B981] text-[#10B981]'
+                    : 'bg-[#151821] border-white/[0.08] text-zinc-400'
+                }`}
+              >
+                {autoGameMode ? 'OTOMATİK: AÇIK' : 'MANUEL'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-t border-white/[0.06] pt-3">
+              <div>
+                <div className="text-xs font-medium text-zinc-200">
+                  ⚡ Oyun Modu (Low-Latency & Minimal Render)
+                </div>
+                <div className="text-[11px] text-zinc-400">
+                  Root elementine `data-game-mode="true"` uygular; tüm `backdrop-filter`, gölge, geçiş ve arka plan animasyonlarını kapatır.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGamingMode(!isGamingMode, false)}
+                className={`px-3 py-1 rounded text-xs font-mono font-bold border shrink-0 ${
                   isGamingMode
                     ? 'bg-[#10B981]/20 border-[#10B981] text-[#10B981]'
                     : 'bg-[#151821] border-white/[0.08] text-zinc-400'
@@ -500,13 +799,13 @@ export const SettingsModal: React.FC = () => {
             <div className="flex items-center justify-between py-1 border-t border-white/[0.06] pt-3">
               <div>
                 <div className="text-xs font-medium text-zinc-200">
-                  GPU Donanım İvmesini Devre Dışı Bırak
+                  GPU Donanım Hızlandırmasını Devre Dışı Bırak (Yeniden Başlatma Gerektirir)
                 </div>
                 <div className="text-[11px] text-zinc-400">
-                  Yeniden başlatmada ekran kartının %100 gücünü oyunlara ayırır.
+                  Rekabetçi oyunlarda GPU çakışması ve input lag yaşayan kullanıcılar için `app.disableHardwareAcceleration()` ayarını kalıcı kaydeder.
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() =>

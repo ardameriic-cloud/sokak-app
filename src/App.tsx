@@ -11,6 +11,55 @@ import { useSokakStore, isUiFrozenForGame } from './store/useSokakStore';
 import { rtcEngine } from './services/rtcEngine';
 import { authApi } from './services/authApi';
 
+function normalizeEventKeyName(key: string, code: string): string {
+  if (code === 'Space' || key === ' ') return 'space';
+  if (key.length === 1) return key.toLowerCase();
+  return key.toLowerCase();
+}
+
+function matchesAccelerator(
+  e: KeyboardEvent,
+  accelerator: string,
+  checkRelease = false
+): boolean {
+  if (!accelerator) return false;
+  const parts = accelerator
+    .split('+')
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean);
+  if (parts.length === 0) return false;
+
+  const mainKey = parts[parts.length - 1];
+  const eventKey = normalizeEventKeyName(e.key, e.code);
+
+  if (checkRelease) {
+    if (eventKey === mainKey) return true;
+    if (
+      (mainKey === 'control' || mainKey === 'commandorcontrol') &&
+      (e.key === 'Control' || e.key === 'Meta')
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  const wantsCtrlOrCmd =
+    parts.includes('commandorcontrol') ||
+    parts.includes('ctrl') ||
+    parts.includes('control') ||
+    parts.includes('cmd') ||
+    parts.includes('command');
+  const wantsShift = parts.includes('shift');
+  const wantsAlt = parts.includes('alt') || parts.includes('option');
+
+  const hasCtrlOrCmd = e.ctrlKey || e.metaKey;
+  if (wantsCtrlOrCmd !== hasCtrlOrCmd) return false;
+  if (wantsShift !== e.shiftKey) return false;
+  if (wantsAlt !== e.altKey) return false;
+
+  return eventKey === mainKey;
+}
+
 export const App: React.FC = () => {
   const isStandaloneOverlay =
     typeof window !== 'undefined' &&
@@ -36,7 +85,7 @@ export const App: React.FC = () => {
   const setOverlayActive = useSokakStore((s) => s.setOverlayActive);
   const setUpdaterStatus = useSokakStore((s) => s.setUpdaterStatus);
 
-  // Pencere odak dışı olduğunda tüm CSS animasyonlarını dondur
+  // Oyun Modu (data-game-mode="true") ve arka plan uyku modunda tüm CSS animasyonlarını / filtreleri dondur
   useEffect(() => {
     if (isStandaloneOverlay) return;
     const frozen = isUiFrozenForGame(useSokakStore.getState());
@@ -44,6 +93,17 @@ export const App: React.FC = () => {
       document.body.classList.add('sokak-ui-frozen');
     } else {
       document.body.classList.remove('sokak-ui-frozen');
+    }
+
+    const rootEl = document.getElementById('root');
+    if (isGamingMode) {
+      document.documentElement.setAttribute('data-game-mode', 'true');
+      document.body.setAttribute('data-game-mode', 'true');
+      rootEl?.setAttribute('data-game-mode', 'true');
+    } else {
+      document.documentElement.removeAttribute('data-game-mode');
+      document.body.removeAttribute('data-game-mode');
+      rootEl?.removeAttribute('data-game-mode');
     }
   }, [isStandaloneOverlay, isGamingMode, isWindowFocused, isWindowMinimized]);
 
@@ -127,33 +187,78 @@ export const App: React.FC = () => {
     window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('focus', handleWindowFocus);
 
+    const isTypingInInput = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName.toLowerCase();
+      return (
+        tag === 'input' ||
+        tag === 'textarea' ||
+        tag === 'select' ||
+        target.isContentEditable
+      );
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
-        const key = e.key.toLowerCase();
-        if (key === 'm') {
+      if (isTypingInInput(e.target) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        return;
+      }
+
+      const st = useSokakStore.getState();
+
+      // Bas-Konuş (Push-to-Talk) tuşu basılı tutulduğunda mikrofonu aç
+      if (
+        st.inputMode === 'ptt' &&
+        matchesAccelerator(e, st.keybinds.pushToTalk, false)
+      ) {
+        e.preventDefault();
+        rtcEngine.setPushToTalkPressed(true);
+        return;
+      }
+
+      // Electron masaüstü ortamında globalShortcut zaten tetikleniyorsa çift tetiklemeyi önle
+      if (!window.sokakDesktop) {
+        if (matchesAccelerator(e, st.keybinds.toggleMute, false)) {
           e.preventDefault();
           rtcEngine.toggleMute();
-        } else if (key === 'd') {
+          return;
+        }
+        if (matchesAccelerator(e, st.keybinds.toggleDeafen, false)) {
           e.preventDefault();
           rtcEngine.toggleDeafen();
-        } else if (key === 'o') {
-          e.preventDefault();
-          if (window.sokakDesktop?.toggleOverlayWindow) {
-            window.sokakDesktop
-              .toggleOverlayWindow()
-              .then((res) => setOverlayActive(res.visible))
-              .catch(() => {});
-          } else {
-            const current = useSokakStore.getState().isOverlayActive;
-            setOverlayActive(!current);
-          }
+          return;
+        }
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        if (window.sokakDesktop?.toggleOverlayWindow) {
+          window.sokakDesktop
+            .toggleOverlayWindow()
+            .then((res) => setOverlayActive(res.visible))
+            .catch(() => {});
+        } else {
+          const current = useSokakStore.getState().isOverlayActive;
+          setOverlayActive(!current);
         }
       }
     };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const st = useSokakStore.getState();
+      if (
+        st.inputMode === 'ptt' &&
+        matchesAccelerator(e, st.keybinds.pushToTalk, true)
+      ) {
+        rtcEngine.setPushToTalkPressed(false);
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
 
     let unsubMute: (() => void) | undefined;
     let unsubDeafen: (() => void) | undefined;
+    let unsubPtt: (() => void) | undefined;
     let unsubVisibility: (() => void) | undefined;
     let unsubGameDetected: (() => void) | undefined;
     let unsubOverlayVisibility: (() => void) | undefined;
@@ -166,7 +271,13 @@ export const App: React.FC = () => {
           setPlatformInfo(
             info.platform,
             info.disableHardwareAcceleration,
-            info.appVersion
+            info.appVersion,
+            {
+              autoGameMode: info.autoGameMode,
+              inputMode: info.inputMode,
+              keybinds: info.keybinds,
+              userVolumes: info.userVolumes,
+            }
           );
         })
         .catch(() => {});
@@ -178,6 +289,12 @@ export const App: React.FC = () => {
       unsubDeafen = window.sokakDesktop.onToggleDeafenShortcut(() => {
         rtcEngine.toggleDeafen();
       });
+
+      if (window.sokakDesktop.onPushToTalkActivity) {
+        unsubPtt = window.sokakDesktop.onPushToTalkActivity(() => {
+          rtcEngine.triggerGlobalPttActivity();
+        });
+      }
 
       unsubVisibility = window.sokakDesktop.onWindowVisibilityState((state) => {
         setWindowVisibility(state.isFocused, state.isMinimized);
@@ -209,8 +326,10 @@ export const App: React.FC = () => {
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
       unsubMute?.();
       unsubDeafen?.();
+      unsubPtt?.();
       unsubVisibility?.();
       unsubGameDetected?.();
       unsubOverlayVisibility?.();

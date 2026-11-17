@@ -29,6 +29,7 @@ export const TitleBar: React.FC = () => {
   const soundEffectsEnabled = useSokakStore((s) => s.soundEffectsEnabled);
 
   const setSettingsModalOpen = useSokakStore((s) => s.setSettingsModalOpen);
+  const setGamingMode = useSokakStore((s) => s.setGamingMode);
   const setThemeAccent = useSokakStore((s) => s.setThemeAccent);
   const setSoundEffectsEnabled = useSokakStore((s) => s.setSoundEffectsEnabled);
   const setUpdaterStatus = useSokakStore((s) => s.setUpdaterStatus);
@@ -137,25 +138,24 @@ export const TitleBar: React.FC = () => {
           OPUS 128K MONO
         </span>
 
-        {uiFrozen && (
-          <div
-            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium"
-            style={{
-              backgroundColor: `${activePreset.color}18`,
-              border: `1px solid ${activePreset.color}55`,
-              color: activePreset.color,
-            }}
-          >
-            <Zap className="w-3 h-3" />
-            <span>
-              {isGamingMode
-                ? 'OYUN MODU AKTİF (0% GPU)'
-                : !isWindowFocused || isWindowMinimized
-                ? 'ARKA PLAN UYKU (0% GPU)'
-                : 'FPS KORUMA'}
-            </span>
-          </div>
-        )}
+        <button
+          onClick={() => setGamingMode(!isGamingMode, false)}
+          title="⚡ Oyun Modu (Low-Latency & Minimal Render) Aç/Kapat"
+          className={`app-no-drag flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono border cursor-pointer ${
+            isGamingMode
+              ? 'bg-[#10B981]/20 border-[#10B981] text-[#10B981] font-bold'
+              : 'bg-[#0C0E14] hover:bg-[#12151F] border-white/[0.07] text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <Zap className="w-3 h-3" />
+          <span>
+            {isGamingMode
+              ? '⚡ OYUN MODU: AÇIK (0% GPU)'
+              : !isWindowFocused || isWindowMinimized
+              ? 'ARKA PLAN UYKU (0% GPU)'
+              : '⚡ OYUN MODU'}
+          </span>
+        </button>
       </div>
 
       {/* Orta Canlı Sunucu, Güncelleme Kontrolü, Tema Vurgu Seçici & Ses Efektleri Anahtarı */}

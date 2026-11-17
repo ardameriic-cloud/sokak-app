@@ -97,6 +97,9 @@ export const MemberSidebar: React.FC = () => {
   const rankLevel = useSokakStore((s) => s.rankLevel);
   const activeVoiceChannelId = useSokakStore((s) => s.activeVoiceChannelId);
   const isOpen = useSokakStore((s) => s.isMemberListOpen);
+  const userVolumes = useSokakStore((s) => s.userVolumes);
+  const setUserVolume = useSokakStore((s) => s.setUserVolume);
+  const toggleUserLocalMute = useSokakStore((s) => s.toggleUserLocalMute);
 
   const [ctxMenu, setCtxMenu] = useState<ContextMenuPos | null>(null);
   const [inspectedUserId, setInspectedUserId] = useState<string | null>(null);
@@ -219,6 +222,59 @@ export const MemberSidebar: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Kişi Bazlı Ses Seviyesi (%0 - %200 GainNode) & Yerel Susturma */}
+          {inspectedMember.userId !== userId && (
+            <div className="pt-2 border-t border-white/[0.06] space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-zinc-300 font-medium flex items-center gap-1">
+                  <Volume2 className="w-3 h-3 text-[#10B981]" />
+                  <span>Kullanıcı Sesi</span>
+                </span>
+                <span className="font-mono font-bold tabular-nums text-[#10B981]">
+                  %{userVolumes[inspectedMember.userId]?.volume ?? 100}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={200}
+                step={5}
+                value={userVolumes[inspectedMember.userId]?.volume ?? 100}
+                onChange={(e) => {
+                  setUserVolume(inspectedMember.userId, Number(e.target.value));
+                  rtcEngine.syncAllPeerVolumes();
+                }}
+                className="w-full accent-[#10B981] cursor-pointer"
+              />
+              <div className="flex items-center justify-between gap-1.5">
+                <button
+                  onClick={() => {
+                    setUserVolume(inspectedMember.userId, 100);
+                    rtcEngine.syncAllPeerVolumes();
+                  }}
+                  className="px-2 py-0.5 rounded bg-[#07080C] border border-white/[0.06] text-[10px] text-zinc-400 hover:text-zinc-200"
+                >
+                  %100 Sıfırla
+                </button>
+                <button
+                  onClick={() => {
+                    toggleUserLocalMute(inspectedMember.userId);
+                    rtcEngine.syncAllPeerVolumes();
+                  }}
+                  className={`px-2 py-0.5 rounded border text-[10px] font-semibold ${
+                    userVolumes[inspectedMember.userId]?.localMuted
+                      ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
+                      : 'bg-[#07080C] border-white/[0.06] text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  {userVolumes[inspectedMember.userId]?.localMuted
+                    ? 'Sesi Geri Aç'
+                    : 'Yerel Sustur'}
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-1.5 pt-1">
             {inspectedVoiceChannel &&

@@ -78,12 +78,25 @@ body.sokak-overlay-mode #root {
   will-change: transform, opacity;
 }
 
-/* ⚡ Oyun Modu veya arka plan uyku modunda tüm animasyonları dondur */
+/* ⚡ Oyun Modu (data-game-mode="true") veya arka plan uyku modunda tüm animasyonları, gölgeleri ve filtreleri dondur */
+[data-game-mode="true"],
+[data-game-mode="true"] *,
+[data-game-mode="true"] *::before,
+[data-game-mode="true"] *::after,
 body.sokak-ui-frozen *,
 body.sokak-ui-frozen *::before,
 body.sokak-ui-frozen *::after {
   animation: none !important;
   transition: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  will-change: auto !important;
+}
+
+[data-game-mode="true"] .cyber-dot-matrix,
+[data-game-mode="true"] .cyber-sidebar-surface {
+  background-image: none !important;
 }
 
 ::-webkit-scrollbar {

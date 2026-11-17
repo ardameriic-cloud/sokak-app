@@ -483,11 +483,12 @@ export const StreamStage: React.FC = () => {
                 return (
                   <div
                     key={occ.socketId}
+                    onClick={(e) => openUserMenu(e, occ)}
                     onContextMenu={(e) => openUserMenu(e, occ)}
                     style={{
                       borderTop: `2px solid ${rankMeta.color}`,
                     }}
-                    className={`group relative rounded-md bg-[#12151F] border border-white/[0.07] p-3 flex flex-col justify-between gap-2.5 select-none ${
+                    className={`group relative rounded-md bg-[#12151F] border border-white/[0.07] p-3 flex flex-col justify-between gap-2.5 select-none cursor-pointer ${
                       occ.isSpeaking
                         ? 'ring-1 ring-[#10B981]'
                         : 'hover:border-white/[0.14]'
@@ -573,11 +574,17 @@ export const StreamStage: React.FC = () => {
                       </div>
 
                       {/* Hover Hızlı Ses & Yönetici Kontrol Çubuğu */}
-                      <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                      <div
+                        className="flex items-center gap-1 opacity-80 group-hover:opacity-100"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {!isSelf && (
                           <>
                             <button
-                              onClick={() => toggleUserLocalMute(occ.userId)}
+                              onClick={() => {
+                                toggleUserLocalMute(occ.userId);
+                                rtcEngine.syncAllPeerVolumes();
+                              }}
                               className={`p-1 rounded border ${
                                 isLocalMuted
                                   ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
@@ -601,18 +608,22 @@ export const StreamStage: React.FC = () => {
                               max={200}
                               step={5}
                               value={userVol}
-                              onChange={(e) =>
-                                setUserVolume(occ.userId, Number(e.target.value))
-                              }
-                              className="w-12 accent-[#10B981] cursor-pointer"
+                              onChange={(e) => {
+                                setUserVolume(occ.userId, Number(e.target.value));
+                                rtcEngine.syncAllPeerVolumes();
+                              }}
+                              className="w-14 accent-[#10B981] cursor-pointer"
                               title={`Kullanıcı Ses Seviyesi: %${userVol}`}
                             />
+                            <span className="text-[9px] font-mono tabular-nums text-[#10B981] w-8 text-right">
+                              %{userVol}
+                            </span>
                           </>
                         )}
                         <button
                           onClick={(e) => openUserMenu(e, occ)}
                           className="p-1 rounded bg-[#07080C] hover:bg-[#191E2C] border border-white/[0.08] text-zinc-300 hover:text-white"
-                          title="Yönetici & Rütbe İşlemleri (Odaya Çek / Taşı / Rütbe Ver)"
+                          title="Ses Mikseri & Yönetici İşlemleri (Odaya Çek / Taşı / Rütbe Ver)"
                         >
                           <Sliders className="w-3 h-3" />
                         </button>

@@ -38,6 +38,8 @@ class RealTimeEngine {
   private peerAudioPipelines = new Map<string, PeerAudioPipeline>();
 
   private audioContext: AudioContext | null = null;
+  private workletLoaded = false;
+  private micWorkletNode: AudioWorkletNode | null = null;
   private rawMicStream: MediaStream | null = null;
   private processedMicStream: MediaStream | null = null;
   private outboundDestination: MediaStreamAudioDestinationNode | null = null;
@@ -48,6 +50,10 @@ class RealTimeEngine {
   private screenAudioGainNode: GainNode | null = null;
   private noiseGateIntervalId: number | null = null;
   private telemetryIntervalId: number | null = null;
+  private pttReleaseTimeoutId: number | null = null;
+  private pttGlobalRepeatTimeoutId: number | null = null;
+  private isPttKeyHeld = false;
+  private readonly PTT_RELEASE_DELAY_MS = 200;
   private lastBytesSent = 0;
   private lastStatsTimestamp = 0;
 
@@ -421,7 +427,98 @@ class RealTimeEngine {
     if (store.activeGame !== gameName) {
       store.setActiveGame(gameName);
       this.socket?.emit('user:updateState', { activeGame: gameName });
+
+      // Aktif oyun algılandığında Oyun Modunu (Low-Latency & Minimal Render) otomatik tetikle
+      if (gameName && store.autoGameMode && !store.isGamingMode) {
+        store.setGamingMode(true, true);
+        store.showToast(
+          `⚡ Oyun algılandı (${gameName}) — Düşük Gecikmeli Oyun Modu otomatik aktifleşti.`,
+          'info'
+        );
+      } else if (!gameName && store.gameModeAutoActivated && store.isGamingMode) {
+        store.setGamingMode(false, false);
+        store.showToast(
+          'Oyun kapatıldı — Arayüz normal görünüm moduna döndü.',
+          'info'
+        );
+      }
     }
+  }
+
+  /**
+   * Bas-Konuş (Push-to-Talk): Yalnızca tuş basılı tutulurken mikrofonu açar,
+   * tuş bırakıldığında 200ms release delay ile kapatır.
+   */
+  public setPushToTalkPressed(pressed: boolean) {
+    const store = useSokakStore.getState();
+    if (store.inputMode !== 'ptt') return;
+
+    if (pressed) {
+      if (this.pttReleaseTimeoutId) {
+        window.clearTimeout(this.pttReleaseTimeoutId);
+        this.pttReleaseTimeoutId = null;
+      }
+      if (!this.isPttKeyHeld) {
+        this.isPttKeyHeld = true;
+        store.setPttActive(true);
+        if (!store.isMuted && !store.isDeafened) {
+          soundFX.playPttCue(true);
+        }
+      }
+    } else {
+      if (!this.isPttKeyHeld) return;
+      if (this.pttReleaseTimeoutId) {
+        window.clearTimeout(this.pttReleaseTimeoutId);
+      }
+      // 200ms Release Delay: Son kelimenin yutulmasını önler
+      this.pttReleaseTimeoutId = window.setTimeout(() => {
+        this.pttReleaseTimeoutId = null;
+        this.isPttKeyHeld = false;
+        useSokakStore.getState().setPttActive(false);
+        const st = useSokakStore.getState();
+        if (!st.isMuted && !st.isDeafened) {
+          soundFX.playPttCue(false);
+        }
+      }, this.PTT_RELEASE_DELAY_MS);
+    }
+  }
+
+  /**
+   * Electron main process globalShortcut üzerinden gelen Bas-Konuş aktivitesi
+   * (Oyun içi tam ekranda tuş basılı tutulduğunda OS key-repeat + 200ms release delay ile çalışır)
+   */
+  public triggerGlobalPttActivity() {
+    const store = useSokakStore.getState();
+    if (store.inputMode !== 'ptt') return;
+
+    this.setPushToTalkPressed(true);
+    if (this.pttGlobalRepeatTimeoutId) {
+      window.clearTimeout(this.pttGlobalRepeatTimeoutId);
+    }
+    this.pttGlobalRepeatTimeoutId = window.setTimeout(() => {
+      this.pttGlobalRepeatTimeoutId = null;
+      this.setPushToTalkPressed(false);
+    }, 360);
+  }
+
+  public async startSettingsMicPreview() {
+    const store = useSokakStore.getState();
+    if (store.activeVoiceChannelId) return;
+    await this.setupLocalMicPipeline();
+  }
+
+  public stopSettingsMicPreview() {
+    const store = useSokakStore.getState();
+    if (store.activeVoiceChannelId) return;
+    if (this.noiseGateIntervalId) {
+      window.clearInterval(this.noiseGateIntervalId);
+      this.noiseGateIntervalId = null;
+    }
+    if (this.rawMicStream) {
+      this.rawMicStream.getTracks().forEach((t) => t.stop());
+      this.rawMicStream = null;
+    }
+    store.setCurrentInputLevelDb(-90);
   }
 
   public emitWatchTogetherUpdate(payload: {
@@ -577,6 +674,51 @@ class RealTimeEngine {
     return this.audioContext;
   }
 
+  private async ensureAudioWorkletLoaded(ctx: AudioContext): Promise<boolean> {
+    if (this.workletLoaded) return true;
+    if (!ctx.audioWorklet) return false;
+    try {
+      const workletCode = `
+        class SokakNoiseGateWorklet extends AudioWorkletProcessor {
+          constructor() {
+            super();
+            this.envelope = 0.0;
+            this.prevIn = 0.0;
+            this.prevOut = 0.0;
+          }
+          process(inputs, outputs) {
+            const input = inputs[0];
+            const output = outputs[0];
+            if (!input || !input[0] || !output || !output[0]) return true;
+            const inCh = input[0];
+            const outCh = output[0];
+            // 85Hz 1. dereceden Yüksek Geçiren Filtre (Masa/klavye alt frekans patlamalarını temizler)
+            const rc = 1.0 / (2.0 * Math.PI * 85.0);
+            const dt = 1.0 / sampleRate;
+            const alpha = rc / (rc + dt);
+            for (let i = 0; i < inCh.length; i++) {
+              const x = inCh[i];
+              const y = alpha * (this.prevOut + x - this.prevIn);
+              this.prevIn = x;
+              this.prevOut = y;
+              outCh[i] = y;
+            }
+            return true;
+          }
+        }
+        registerProcessor('sokak-noise-filter-worklet', SokakNoiseGateWorklet);
+      `;
+      const blob = new Blob([workletCode], { type: 'application/javascript' });
+      const url = URL.createObjectURL(blob);
+      await ctx.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+      this.workletLoaded = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async setupLocalMicPipeline(): Promise<MediaStream> {
     const store = useSokakStore.getState();
     const ctx = this.ensureAudioContext();
@@ -588,9 +730,9 @@ class RealTimeEngine {
     const audioConstraints: MediaTrackConstraints = {
       sampleRate: 48000,
       channelCount: 1,
-      echoCancellation: true,
+      echoCancellation: store.echoCancellation,
       noiseSuppression: store.browserNoiseSuppression,
-      autoGainControl: false,
+      autoGainControl: store.autoGainControl,
     };
 
     if (
@@ -611,9 +753,9 @@ class RealTimeEngine {
           audio: {
             sampleRate: 48000,
             channelCount: 1,
-            echoCancellation: true,
+            echoCancellation: store.echoCancellation,
             noiseSuppression: store.browserNoiseSuppression,
-            autoGainControl: false,
+            autoGainControl: store.autoGainControl,
           },
           video: false,
         });
@@ -624,18 +766,43 @@ class RealTimeEngine {
     }
 
     const source = ctx.createMediaStreamSource(this.rawMicStream);
+
+    // AudioWorklet tabanlı hafif alt-frekans gürültü filtresi (desteklenmezse BiquadFilter yedekli)
+    let filterOutputNode: AudioNode = source;
+    const hasWorklet = await this.ensureAudioWorkletLoaded(ctx);
+    if (hasWorklet) {
+      try {
+        this.micWorkletNode = new AudioWorkletNode(
+          ctx,
+          'sokak-noise-filter-worklet'
+        );
+        source.connect(this.micWorkletNode);
+        filterOutputNode = this.micWorkletNode;
+      } catch {
+        this.micWorkletNode = null;
+      }
+    }
+
+    if (!this.micWorkletNode) {
+      const highpass = ctx.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.value = 85;
+      source.connect(highpass);
+      filterOutputNode = highpass;
+    }
+
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 512;
     analyser.smoothingTimeConstant = 0.25;
 
     const gateGain = ctx.createGain();
-    gateGain.gain.value = 1.0;
+    gateGain.gain.value = store.inputMode === 'ptt' ? 0.0 : 1.0;
 
     const destination = ctx.createMediaStreamDestination();
     destination.channelCount = 1;
 
-    source.connect(analyser);
-    source.connect(gateGain);
+    filterOutputNode.connect(analyser);
+    filterOutputNode.connect(gateGain);
     gateGain.connect(destination);
 
     // Ekran paylaşımı sistem sesi aktifse yeni mikrofon çıkış hedefine tekrar bağla
@@ -727,9 +894,12 @@ class RealTimeEngine {
         lastVoiceDetectedAt = now;
       }
 
+      // Bas-Konuş (Push-to-Talk) modunda yalnızca PTT tuşu basılıyken (veya 200ms release delay süresince) mikrofon açılır
       const gateOpen =
-        db >= state.noiseGateThresholdDb ||
-        now - lastVoiceDetectedAt < HOLD_TIME_MS;
+        state.inputMode === 'ptt'
+          ? this.isPttKeyHeld || state.isPttActive
+          : db >= state.noiseGateThresholdDb ||
+            now - lastVoiceDetectedAt < HOLD_TIME_MS;
       const targetGain = gateOpen ? 1.0 : 0.0;
 
       this.micGainGateNode.gain.setTargetAtTime(

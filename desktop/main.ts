@@ -19,9 +19,25 @@ import fs from 'fs';
 import https from 'https';
 import { exec } from 'child_process';
 
+export interface KeybindConfig {
+  toggleMute: string;
+  toggleDeafen: string;
+  pushToTalk: string;
+}
+
 interface PersistedDesktopConfig {
   disableHardwareAcceleration: boolean;
+  autoGameMode?: boolean;
+  inputMode?: 'vad' | 'ptt';
+  keybinds?: KeybindConfig;
+  userVolumes?: Record<string, { volume: number; localMuted: boolean }>;
 }
+
+const DEFAULT_KEYBINDS: KeybindConfig = {
+  toggleMute: 'CommandOrControl+Shift+M',
+  toggleDeafen: 'CommandOrControl+Shift+D',
+  pushToTalk: 'CommandOrControl+Shift+Space',
+};
 
 export interface UpdaterStatusPayload {
   state:
@@ -46,20 +62,51 @@ function readDesktopConfig(): PersistedDesktopConfig {
   try {
     if (fs.existsSync(configPath)) {
       const raw = fs.readFileSync(configPath, 'utf-8');
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      return {
+        disableHardwareAcceleration: Boolean(parsed.disableHardwareAcceleration),
+        autoGameMode: parsed.autoGameMode !== false,
+        inputMode: parsed.inputMode === 'ptt' ? 'ptt' : 'vad',
+        keybinds: {
+          ...DEFAULT_KEYBINDS,
+          ...(parsed.keybinds || {}),
+        },
+        userVolumes: parsed.userVolumes || {},
+      };
     }
   } catch {
     // Fallback to default
   }
-  return { disableHardwareAcceleration: false };
+  return {
+    disableHardwareAcceleration: false,
+    autoGameMode: true,
+    inputMode: 'vad',
+    keybinds: { ...DEFAULT_KEYBINDS },
+    userVolumes: {},
+  };
 }
 
-function writeDesktopConfig(cfg: PersistedDesktopConfig): void {
+function writeDesktopConfig(partial: Partial<PersistedDesktopConfig>): PersistedDesktopConfig {
+  const current = readDesktopConfig();
+  const merged: PersistedDesktopConfig = {
+    ...current,
+    ...partial,
+    keybinds: {
+      ...DEFAULT_KEYBINDS,
+      ...(current.keybinds || {}),
+      ...(partial.keybinds || {}),
+    },
+    userVolumes: {
+      ...(current.userVolumes || {}),
+      ...(partial.userVolumes || {}),
+    },
+  };
   try {
-    fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf-8');
+    fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf-8');
   } catch (err) {
     console.error('Failed to save desktop config:', err);
   }
+  return merged;
 }
 
 const initialConfig = readDesktopConfig();
@@ -100,8 +147,15 @@ const KNOWN_GAMES: Array<{ keywords: string[]; display: string }> = [
   { keywords: ['valorant'], display: 'Valorant' },
   { keywords: ['counter-strike 2', 'cs2'], display: 'Counter-Strike 2' },
   { keywords: ['ea sports fc', 'fc 24', 'fc 25'], display: 'EA SPORTS FC' },
-  { keywords: ['league of legends'], display: 'League of Legends' },
+  { keywords: ['league of legends', 'leagueclient'], display: 'League of Legends' },
   { keywords: ['fortnite'], display: 'Fortnite' },
+  { keywords: ['r5apex', 'apex legends'], display: 'Apex Legends' },
+  { keywords: ['dota2', 'dota 2'], display: 'Dota 2' },
+  { keywords: ['tslgame', 'pubg'], display: 'PUBG: Battlegrounds' },
+  { keywords: ['rustclient', 'rust'], display: 'Rust' },
+  { keywords: ['rainbowsix', 'r6'], display: 'Rainbow Six Siege' },
+  { keywords: ['overwatch'], display: 'Overwatch 2' },
+  { keywords: ['gta5', 'gtav'], display: 'Grand Theft Auto V' },
 ];
 
 function broadcastUpdaterStatus(status: UpdaterStatusPayload) {
@@ -847,20 +901,55 @@ function createMainWindow() {
   });
 }
 
-function registerGlobalHardwareShortcuts() {
+function safeRegisterShortcut(accelerator: string, handler: () => void): boolean {
+  const clean = String(accelerator || '').trim();
+  if (!clean) return false;
+  try {
+    return globalShortcut.register(clean, handler);
+  } catch (err) {
+    console.warn(`Global kısayol kaydedilemedi (${clean}):`, err);
+    return false;
+  }
+}
+
+function registerGlobalHardwareShortcuts(
+  customKeybinds?: KeybindConfig,
+  inputMode?: 'vad' | 'ptt'
+): Record<string, boolean> {
   globalShortcut.unregisterAll();
 
-  globalShortcut.register('CommandOrControl+Shift+M', () => {
+  const cfg = readDesktopConfig();
+  const binds: KeybindConfig = {
+    ...DEFAULT_KEYBINDS,
+    ...(cfg.keybinds || {}),
+    ...(customKeybinds || {}),
+  };
+  const mode = inputMode || cfg.inputMode || 'vad';
+
+  const muteOk = safeRegisterShortcut(binds.toggleMute, () => {
     mainWindow?.webContents.send('shortcut:toggle-mute');
   });
 
-  globalShortcut.register('CommandOrControl+Shift+D', () => {
+  const deafenOk = safeRegisterShortcut(binds.toggleDeafen, () => {
     mainWindow?.webContents.send('shortcut:toggle-deafen');
   });
 
-  globalShortcut.register('CommandOrControl+Shift+O', () => {
+  safeRegisterShortcut('CommandOrControl+Shift+O', () => {
     toggleOverlayWindow();
   });
+
+  let pttOk = true;
+  if (mode === 'ptt' && binds.pushToTalk) {
+    pttOk = safeRegisterShortcut(binds.pushToTalk, () => {
+      mainWindow?.webContents.send('shortcut:ptt-activity');
+    });
+  }
+
+  return {
+    toggleMute: muteOk,
+    toggleDeafen: deafenOk,
+    pushToTalk: pttOk,
+  };
 }
 
 app.whenReady().then(async () => {
@@ -895,12 +984,57 @@ app.on('will-quit', () => {
 
 // IPC Handlers
 ipcMain.handle('window:get-platform', () => {
+  const latestCfg = readDesktopConfig();
   return {
     platform: process.platform,
-    disableHardwareAcceleration: initialConfig.disableHardwareAcceleration,
+    disableHardwareAcceleration: latestCfg.disableHardwareAcceleration,
+    autoGameMode: latestCfg.autoGameMode !== false,
+    inputMode: latestCfg.inputMode || 'vad',
+    keybinds: latestCfg.keybinds || DEFAULT_KEYBINDS,
+    userVolumes: latestCfg.userVolumes || {},
     isOverlayVisible,
     appVersion: app.getVersion(),
   };
+});
+
+ipcMain.handle(
+  'keybinds:update',
+  (
+    _event,
+    payload: {
+      keybinds: KeybindConfig;
+      inputMode: 'vad' | 'ptt';
+    }
+  ) => {
+    const saved = writeDesktopConfig({
+      keybinds: payload.keybinds,
+      inputMode: payload.inputMode,
+    });
+    const registered = registerGlobalHardwareShortcuts(
+      saved.keybinds,
+      saved.inputMode
+    );
+    return {
+      ok: true,
+      keybinds: saved.keybinds,
+      inputMode: saved.inputMode,
+      registered,
+    };
+  }
+);
+
+ipcMain.on(
+  'settings:save-volumes',
+  (
+    _event,
+    userVolumes: Record<string, { volume: number; localMuted: boolean }>
+  ) => {
+    writeDesktopConfig({ userVolumes });
+  }
+);
+
+ipcMain.on('settings:save-auto-game-mode', (_event, autoGameMode: boolean) => {
+  writeDesktopConfig({ autoGameMode });
 });
 
 ipcMain.on('window:minimize', () => {
